@@ -174,7 +174,7 @@ function loadAboutInfo() {
 }
 
 /**
- * THREE.JS SCENE & BRIGHT HALLOWEEN NIGHT LIGHTING SETUP
+ * THREE.JS SCENE, PURPLE/NAVY GRADIENT SKY & BALANCED CARTOON NIGHT LIGHTING
  */
 const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
@@ -187,23 +187,45 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.22;
+// Balanced exposure so colours stay rich and saturated without over-exposing highlights
+renderer.toneMappingExposure = 0.98;
 container.appendChild(renderer.domElement);
 
-// --- VIBRANT HALLOWEEN NIGHT SKY & PURPLE-INDIGO FOG ---
-const SKY_COLOR = 0x160b2e;
-scene.background = new THREE.Color(SKY_COLOR);
-scene.fog = new THREE.FogExp2(0x1b0e38, 0.0026);
+// --- PROCEDURAL PURPLE / NAVY GRADIENT NIGHT SKY ---
+function createNightSkyTexture() {
+    const cvs = document.createElement('canvas');
+    cvs.width = 32;
+    cvs.height = 512;
+    const ctx = cvs.getContext('2d');
 
-// --- LIGHTING ---
-const ambientLight = new THREE.AmbientLight(0x4c3778, 0.65);
+    // Top-to-bottom cartoon night sky gradient: deep navy -> twilight indigo -> rich royal purple horizon
+    const grad = ctx.createLinearGradient(0, 0, 0, 512);
+    grad.addColorStop(0.00, '#070b1e'); // Deep midnight navy at zenith
+    grad.addColorStop(0.28, '#121536'); // Dark twilight blue-indigo
+    grad.addColorStop(0.55, '#24174a'); // Rich cartoon Halloween purple
+    grad.addColorStop(0.80, '#361d63'); // Vibrant plum-violet near horizon
+    grad.addColorStop(1.00, '#1e1136'); // Ground-blend purple
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 32, 512);
+
+    const tex = new THREE.CanvasTexture(cvs);
+    tex.encoding = THREE.sRGBEncoding;
+    return tex;
+}
+
+scene.background = createNightSkyTexture();
+// Fog matches the lower-horizon royal purple of the sky gradient for seamless depth
+scene.fog = new THREE.FogExp2(0x22133d, 0.0026);
+
+// --- BALANCED CARTOON NIGHT LIGHTING (Not over-exposed, strong colour separation) ---
+const ambientLight = new THREE.AmbientLight(0x3d2b63, 0.42);
 scene.add(ambientLight);
 
-const hemiLight = new THREE.HemisphereLight(0xa4c8ff, 0x3b1f5e, 1.15);
+const hemiLight = new THREE.HemisphereLight(0x7aa7ff, 0x261342, 0.78);
 scene.add(hemiLight);
 
-// Bright silvery-blue moonlight with dynamic shadow frustum that follows the pack
-const moonLight = new THREE.DirectionalLight(0xdceeff, 1.35);
+// Crisp silvery-blue moonlight with dynamic shadow frustum following the racers
+const moonLight = new THREE.DirectionalLight(0xc2dcff, 0.95);
 moonLight.position.set(45, 95, 60);
 moonLight.castShadow = true;
 moonLight.shadow.mapSize.width = 2048;
@@ -218,13 +240,13 @@ moonLight.shadow.bias = -0.0005;
 scene.add(moonLight);
 scene.add(moonLight.target);
 
-// Warm front/fill light & cool rim light that track the pack (non-shadow casting for high performance)
-const packFillLight = new THREE.DirectionalLight(0xffb76b, 0.78);
+// Gentle warm front fill & cool cyan rim light that track the pack (non-shadow casting)
+const packFillLight = new THREE.DirectionalLight(0xffa752, 0.48);
 packFillLight.position.set(-18, 28, 35);
 scene.add(packFillLight);
 scene.add(packFillLight.target);
 
-const packRimLight = new THREE.DirectionalLight(0x80d8ff, 0.55);
+const packRimLight = new THREE.DirectionalLight(0x66ccff, 0.36);
 packRimLight.position.set(0, 32, -45);
 scene.add(packRimLight);
 scene.add(packRimLight.target);
@@ -241,50 +263,50 @@ function createRoadTexture() {
     const ctx = cvs.getContext('2d');
 
     // Deep indigo-slate cartoon tarmac for strong monster separation
-    ctx.fillStyle = '#262338';
+    ctx.fillStyle = '#211d30';
     ctx.fillRect(0, 0, 512, 512);
 
     // Subtle stylised road texture
     for (let i = 0; i < 6500; i++) {
         const x = Math.random() * 512;
         const y = Math.random() * 512;
-        const v = 34 + Math.floor(Math.random() * 24);
-        ctx.fillStyle = `rgb(${v}, ${v - 2}, ${v + 14})`;
+        const v = 28 + Math.floor(Math.random() * 20);
+        ctx.fillStyle = `rgb(${v}, ${v - 2}, ${v + 12})`;
         ctx.fillRect(x, y, 2, 2);
     }
 
     // Mossy/purple-tinted shoulders + bright orange edge stripes
     const leftGrad = ctx.createLinearGradient(0, 0, 55, 0);
-    leftGrad.addColorStop(0, '#273824');
-    leftGrad.addColorStop(1, 'rgba(38, 35, 56, 0)');
+    leftGrad.addColorStop(0, '#202e1e');
+    leftGrad.addColorStop(1, 'rgba(33, 29, 48, 0)');
     ctx.fillStyle = leftGrad;
     ctx.fillRect(0, 0, 55, 512);
 
     const rightGrad = ctx.createLinearGradient(512, 0, 457, 0);
-    rightGrad.addColorStop(0, '#273824');
-    rightGrad.addColorStop(1, 'rgba(38, 35, 56, 0)');
+    rightGrad.addColorStop(0, '#202e1e');
+    rightGrad.addColorStop(1, 'rgba(33, 29, 48, 0)');
     ctx.fillStyle = rightGrad;
     ctx.fillRect(457, 0, 55, 512);
 
-    // Bright Halloween orange road edge lines
-    ctx.fillStyle = 'rgba(255, 138, 0, 0.72)';
+    // Halloween orange road edge lines
+    ctx.fillStyle = 'rgba(255, 130, 0, 0.65)';
     ctx.fillRect(18, 0, 6, 512);
     ctx.fillRect(488, 0, 6, 512);
 
     // Warm double amber centre lines
-    ctx.fillStyle = 'rgba(255, 183, 77, 0.65)';
+    ctx.fillStyle = 'rgba(245, 175, 70, 0.58)';
     ctx.fillRect(249, 0, 4, 512);
     ctx.fillRect(259, 0, 4, 512);
 
     // Clear lane dividers
-    ctx.fillStyle = 'rgba(215, 210, 240, 0.35)';
+    ctx.fillStyle = 'rgba(205, 200, 230, 0.30)';
     for (let y = 0; y < 512; y += 64) {
         ctx.fillRect(134, y, 4, 34);
         ctx.fillRect(374, y, 4, 34);
     }
 
     // Stylised cracks
-    ctx.strokeStyle = '#151221';
+    ctx.strokeStyle = '#13101d';
     ctx.lineWidth = 2;
     for (let c = 0; c < 14; c++) {
         ctx.beginPath();
@@ -311,10 +333,10 @@ function createCryptStoneTexture() {
     cvs.width = 128;
     cvs.height = 128;
     const ctx = cvs.getContext('2d');
-    ctx.fillStyle = '#4e4663';
+    ctx.fillStyle = '#453e59';
     ctx.fillRect(0, 0, 128, 128);
     for (let i = 0; i < 800; i++) {
-        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.14)';
+        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.14)';
         ctx.fillRect(Math.random() * 128, Math.random() * 128, 3, 3);
     }
     const tex = new THREE.CanvasTexture(cvs);
@@ -337,7 +359,7 @@ const roadLength = CONFIG.raceDistance + 1200;
 const roadGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, roadLength);
 const roadMat = new THREE.MeshStandardMaterial({
     map: roadTex,
-    roughness: 0.80,
+    roughness: 0.82,
     metalness: 0.05
 });
 const roadMesh = new THREE.Mesh(roadGeo, roadMat);
@@ -348,7 +370,7 @@ landscapeGroup.add(roadMesh);
 
 // 2. Raised Stone Kerbs & Haunted Verges
 const kerbGeo = new THREE.BoxGeometry(2.5, 0.9, roadLength);
-const kerbMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x7e7396, roughness: 0.85 });
+const kerbMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x706687, roughness: 0.85 });
 
 const leftKerb = new THREE.Mesh(kerbGeo, kerbMat);
 leftKerb.position.set(-(CONFIG.roadWidth / 2) - 1.25, 0.45, CONFIG.raceDistance / 2);
@@ -361,7 +383,7 @@ rightKerb.receiveShadow = true;
 landscapeGroup.add(rightKerb);
 
 const vergeGeo = new THREE.BoxGeometry(340, 20, roadLength);
-const vergeMat = new THREE.MeshStandardMaterial({ color: 0x1e2c22, roughness: 0.92 });
+const vergeMat = new THREE.MeshStandardMaterial({ color: 0x19261d, roughness: 0.92 });
 
 const leftVerge = new THREE.Mesh(vergeGeo, vergeMat);
 leftVerge.position.set(-208, -9.8, CONFIG.raceDistance / 2);
@@ -384,9 +406,9 @@ const haloCanvas = document.createElement('canvas');
 haloCanvas.width = 128; haloCanvas.height = 128;
 const hCtx = haloCanvas.getContext('2d');
 const hGrad = hCtx.createRadialGradient(64, 64, 10, 64, 64, 64);
-hGrad.addColorStop(0, 'rgba(255, 240, 190, 0.65)');
-hGrad.addColorStop(0.5, 'rgba(255, 160, 60, 0.25)');
-hGrad.addColorStop(1, 'rgba(180, 100, 255, 0)');
+hGrad.addColorStop(0, 'rgba(255, 238, 185, 0.58)');
+hGrad.addColorStop(0.5, 'rgba(255, 155, 60, 0.22)');
+hGrad.addColorStop(1, 'rgba(160, 90, 255, 0)');
 hCtx.fillStyle = hGrad;
 hCtx.fillRect(0, 0, 128, 128);
 const haloSprite = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -394,7 +416,7 @@ const haloSprite = new THREE.Sprite(new THREE.SpriteMaterial({
     blending: THREE.AdditiveBlending,
     fog: false
 }));
-haloSprite.scale.set(290, 290, 1);
+haloSprite.scale.set(280, 280, 1);
 moonGroup.add(haloSprite);
 moonGroup.position.set(80, 210, CONFIG.raceDistance + 550);
 scene.add(moonGroup);
@@ -409,7 +431,7 @@ for (let i = 0; i < starCount; i++) {
 }
 const starGeo = new THREE.BufferGeometry();
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2.4, fog: false });
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2.3, fog: false });
 scene.add(new THREE.Points(starGeo, starMat));
 
 // 4. Instanced Spooky Dead Trees
@@ -435,7 +457,7 @@ function buildInstancedSpookyTrees() {
     }
 
     const count = treePlacements.length;
-    const barkMat = new THREE.MeshStandardMaterial({ color: 0x352438, roughness: 0.90, flatShading: true });
+    const barkMat = new THREE.MeshStandardMaterial({ color: 0x2e1f33, roughness: 0.90, flatShading: true });
     const trunkGeo = new THREE.CylinderGeometry(0.6, 1.8, 10, 6);
     const branchGeo = new THREE.ConeGeometry(0.65, 6.5, 5);
 
@@ -493,7 +515,7 @@ function buildInstancedGravestones() {
         }
     }
     const graveGeo = new THREE.BoxGeometry(2.2, 3.6, 0.6);
-    const graveMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x6f6687, roughness: 0.85 });
+    const graveMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x625978, roughness: 0.85 });
     const graveInst = new THREE.InstancedMesh(graveGeo, graveMat, graves.length);
     graveInst.castShadow = true;
     graveInst.receiveShadow = true;
@@ -518,7 +540,7 @@ function createTrackSiding(imagePath, x, z, side) {
     const baseMat = new THREE.MeshStandardMaterial({
         map: stoneTex,
         roughness: 0.88,
-        color: 0x6e6380
+        color: 0x605673
     });
 
     const base = new THREE.Mesh(baseGeo, baseMat);
@@ -555,17 +577,17 @@ for (let z = 0; z <= CONFIG.raceDistance; z += sidingInterval) {
     landscapeGroup.add(createTrackSiding(img2, 85, z, 1));
 }
 
-// 7. Bright Roadside Jack-o'-Lanterns & Spectral Lantern Accents
+// 7. Roadside Jack-o'-Lanterns
 const pumpkinOuterMat = new THREE.MeshStandardMaterial({
     color: 0xff6d00,
     roughness: 0.45,
-    emissive: 0x4a1800,
-    emissiveIntensity: 0.45
+    emissive: 0x3b1200,
+    emissiveIntensity: 0.35
 });
 const pumpkinGlowMat = new THREE.MeshStandardMaterial({
     color: 0xfff176,
-    emissive: 0xff9100,
-    emissiveIntensity: 1.0
+    emissive: 0xff8000,
+    emissiveIntensity: 0.85
 });
 
 function buildRoadsidePumpkins() {
@@ -615,12 +637,12 @@ checkTex.magFilter = THREE.NearestFilter;
 
 const fBanner = new THREE.Mesh(
     new THREE.BoxGeometry(74, 7, 2),
-    new THREE.MeshStandardMaterial({ map: checkTex, roughness: 0.6, emissive: 0x261000 })
+    new THREE.MeshStandardMaterial({ map: checkTex, roughness: 0.6, emissive: 0x1c0b00 })
 );
 fBanner.position.set(0, 21, CONFIG.raceDistance);
 fBanner.castShadow = true;
 
-const pillarMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x5c4f70, roughness: 0.85 });
+const pillarMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x524666, roughness: 0.85 });
 const p1 = new THREE.Mesh(new THREE.BoxGeometry(3.5, 25, 3.5), pillarMat);
 p1.position.set(-36, 12.5, CONFIG.raceDistance);
 p1.castShadow = true;
@@ -632,7 +654,7 @@ scene.add(finishGroup);
 
 // Road Start & Finish Paint Strips
 const lineStripGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, 3.5);
-const startLineMat = new THREE.MeshBasicMaterial({ map: checkTex, transparent: true, opacity: 0.92 });
+const startLineMat = new THREE.MeshBasicMaterial({ map: checkTex, transparent: true, opacity: 0.90 });
 const startLineStrip = new THREE.Mesh(lineStripGeo, startLineMat);
 startLineStrip.rotation.x = -Math.PI / 2;
 startLineStrip.position.set(0, 0.04, 0);
@@ -653,8 +675,8 @@ mistCanvas.width = 64;
 mistCanvas.height = 64;
 const mistCtx = mistCanvas.getContext('2d');
 const mistGrad = mistCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
-mistGrad.addColorStop(0, 'rgba(195, 175, 230, 0.58)');
-mistGrad.addColorStop(0.5, 'rgba(120, 255, 90, 0.25)');
+mistGrad.addColorStop(0, 'rgba(185, 165, 225, 0.52)');
+mistGrad.addColorStop(0.5, 'rgba(110, 245, 85, 0.22)');
 mistGrad.addColorStop(1, 'rgba(60, 20, 90, 0)');
 mistCtx.fillStyle = mistGrad;
 mistCtx.fillRect(0, 0, 64, 64);
@@ -688,7 +710,7 @@ function spawnFootstepMist(x, z, scale) {
     item.baseScale = scale;
     item.mesh.position.set(x, 0.12, z);
     item.mesh.scale.set(scale, scale, 1);
-    item.mesh.material.opacity = 0.65;
+    item.mesh.material.opacity = 0.58;
     item.mesh.visible = true;
 }
 
@@ -703,7 +725,7 @@ function updateFootstepMist(delta) {
         } else {
             const s = item.baseScale + item.age * 2.8;
             item.mesh.scale.set(s, s, 1);
-            item.mesh.material.opacity = 0.65 * (1 - item.age / 0.85);
+            item.mesh.material.opacity = 0.58 * (1 - item.age / 0.85);
         }
     }
 }
@@ -1926,7 +1948,7 @@ function animate() {
     const time = clock.getElapsedTime();
 
     // Flickering candle effect for roadside Jack-o'-Lanterns
-    const flicker = 0.85 + Math.sin(time * 14) * 0.2 + Math.cos(time * 23) * 0.15;
+    const flicker = 0.72 + Math.sin(time * 14) * 0.16 + Math.cos(time * 23) * 0.12;
     pumpkinGlowMat.emissiveIntensity = flicker;
 
     if (raceState === RACE_STATE.RACING) updateFootstepMist(delta);

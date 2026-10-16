@@ -5,10 +5,19 @@ const CONFIG = {
     duckCount: 8,
     raceDistance: 800,
     targetDuration: 58,
-    roadWidth: 74
+    roadWidth: 74,
+    racerScale: 1.48
 };
 
-// Colours for the 8 lanes (matching the original duck colours)
+// Explicit Race State Machine
+const RACE_STATE = {
+    READY: 'READY',
+    COUNTDOWN: 'COUNTDOWN',
+    RACING: 'RACING',
+    FINISHED: 'FINISHED'
+};
+
+// Colours for the 8 lanes (matching the original monster identities)
 const COLORS = [
     0xF42941, // 0: Red - Vampire
     0xE9862A, // 1: Orange - Pumpkin Fiend
@@ -27,12 +36,21 @@ let storedRaces = [];
 let currentRaceIndex = 0;
 let gameSpeed = 1.0;
 
-// Flags for race progression
+// Explicit state tracking + backwards-compatible boolean flags
+let raceState = RACE_STATE.READY;
 let isRacing = false;
 let isCountingDown = false;
 let raceEnded = false;
 let firstFinishTriggered = false;
 let winnerFinishTime = 0;
+let countdownTimerId = null;
+
+function setRaceState(nextState) {
+    raceState = nextState;
+    isCountingDown = (nextState === RACE_STATE.COUNTDOWN);
+    isRacing = (nextState === RACE_STATE.RACING || nextState === RACE_STATE.FINISHED);
+    raceEnded = (nextState === RACE_STATE.FINISHED);
+}
 
 // -- AUDIO SETUP --
 const sfxRiver = new Audio('audio/river_looped.mp3');
@@ -64,7 +82,6 @@ class RaceAudio {
 
     playSpookyChord(baseFreq, duration) {
         if (!this.ctx) return;
-        // Diminished triad for a classic horror organ feel
         const freqs = [baseFreq, baseFreq * 1.189, baseFreq * 1.414];
         const now = this.ctx.currentTime;
 
@@ -157,30 +174,36 @@ function loadAboutInfo() {
 }
 
 /**
- * THREE.JS SCENE & LIGHTING SETUP
+ * THREE.JS SCENE & BRIGHT HALLOWEEN NIGHT LIGHTING SETUP
  */
 const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
 
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.5, 2500);
+const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.5, 2500);
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.22;
 container.appendChild(renderer.domElement);
 
-// --- NIGHT SKY & EERIE FOG ---
-const SKY_COLOR = 0x090514;
+// --- VIBRANT HALLOWEEN NIGHT SKY & PURPLE-INDIGO FOG ---
+const SKY_COLOR = 0x160b2e;
 scene.background = new THREE.Color(SKY_COLOR);
-scene.fog = new THREE.FogExp2(0x0c071b, 0.0042);
+scene.fog = new THREE.FogExp2(0x1b0e38, 0.0026);
 
 // --- LIGHTING ---
-const hemiLight = new THREE.HemisphereLight(0x8e9eab, 0x1a0f2e, 0.75);
+const ambientLight = new THREE.AmbientLight(0x4c3778, 0.65);
+scene.add(ambientLight);
+
+const hemiLight = new THREE.HemisphereLight(0xa4c8ff, 0x3b1f5e, 1.15);
 scene.add(hemiLight);
 
-// Moonlight with dynamic shadow frustum that follows the pack for high efficiency
-const moonLight = new THREE.DirectionalLight(0xcfd8dc, 1.05);
+// Bright silvery-blue moonlight with dynamic shadow frustum that follows the pack
+const moonLight = new THREE.DirectionalLight(0xdceeff, 1.35);
 moonLight.position.set(45, 95, 60);
 moonLight.castShadow = true;
 moonLight.shadow.mapSize.width = 2048;
@@ -195,10 +218,21 @@ moonLight.shadow.bias = -0.0005;
 scene.add(moonLight);
 scene.add(moonLight.target);
 
+// Warm front/fill light & cool rim light that track the pack (non-shadow casting for high performance)
+const packFillLight = new THREE.DirectionalLight(0xffb76b, 0.78);
+packFillLight.position.set(-18, 28, 35);
+scene.add(packFillLight);
+scene.add(packFillLight.target);
+
+const packRimLight = new THREE.DirectionalLight(0x80d8ff, 0.55);
+packRimLight.position.set(0, 32, -45);
+scene.add(packRimLight);
+scene.add(packRimLight.target);
+
 const textureLoader = new THREE.TextureLoader();
 
 /**
- * PROCEDURAL TEXTURES (Zero extra network requests for road & moon)
+ * PROCEDURAL TEXTURES (High-contrast readable road & stonework)
  */
 function createRoadTexture() {
     const cvs = document.createElement('canvas');
@@ -206,48 +240,53 @@ function createRoadTexture() {
     cvs.height = 512;
     const ctx = cvs.getContext('2d');
 
-    // Base dark weathered tarmac
-    ctx.fillStyle = '#1c1b22';
+    // Deep indigo-slate cartoon tarmac for strong monster separation
+    ctx.fillStyle = '#262338';
     ctx.fillRect(0, 0, 512, 512);
 
-    // Asphalt grain and mossy patches
-    for (let i = 0; i < 9000; i++) {
+    // Subtle stylised road texture
+    for (let i = 0; i < 6500; i++) {
         const x = Math.random() * 512;
         const y = Math.random() * 512;
-        const v = 20 + Math.floor(Math.random() * 25);
-        ctx.fillStyle = `rgb(${v}, ${v - 2}, ${v + 5})`;
+        const v = 34 + Math.floor(Math.random() * 24);
+        ctx.fillStyle = `rgb(${v}, ${v - 2}, ${v + 14})`;
         ctx.fillRect(x, y, 2, 2);
     }
 
-    // Muddy/mossy shoulders on left and right edges
-    const leftGrad = ctx.createLinearGradient(0, 0, 65, 0);
-    leftGrad.addColorStop(0, '#1e2618');
-    leftGrad.addColorStop(1, 'rgba(28, 27, 34, 0)');
+    // Mossy/purple-tinted shoulders + bright orange edge stripes
+    const leftGrad = ctx.createLinearGradient(0, 0, 55, 0);
+    leftGrad.addColorStop(0, '#273824');
+    leftGrad.addColorStop(1, 'rgba(38, 35, 56, 0)');
     ctx.fillStyle = leftGrad;
-    ctx.fillRect(0, 0, 65, 512);
+    ctx.fillRect(0, 0, 55, 512);
 
-    const rightGrad = ctx.createLinearGradient(512, 0, 447, 0);
-    rightGrad.addColorStop(0, '#1e2618');
-    rightGrad.addColorStop(1, 'rgba(28, 27, 34, 0)');
+    const rightGrad = ctx.createLinearGradient(512, 0, 457, 0);
+    rightGrad.addColorStop(0, '#273824');
+    rightGrad.addColorStop(1, 'rgba(38, 35, 56, 0)');
     ctx.fillStyle = rightGrad;
-    ctx.fillRect(447, 0, 65, 512);
+    ctx.fillRect(457, 0, 55, 512);
 
-    // Faded double yellow/orange centre line
-    ctx.fillStyle = 'rgba(210, 140, 40, 0.45)';
-    ctx.fillRect(250, 0, 4, 512);
-    ctx.fillRect(258, 0, 4, 512);
+    // Bright Halloween orange road edge lines
+    ctx.fillStyle = 'rgba(255, 138, 0, 0.72)';
+    ctx.fillRect(18, 0, 6, 512);
+    ctx.fillRect(488, 0, 6, 512);
 
-    // Faded lane dividers
-    ctx.fillStyle = 'rgba(180, 180, 195, 0.22)';
+    // Warm double amber centre lines
+    ctx.fillStyle = 'rgba(255, 183, 77, 0.65)';
+    ctx.fillRect(249, 0, 4, 512);
+    ctx.fillRect(259, 0, 4, 512);
+
+    // Clear lane dividers
+    ctx.fillStyle = 'rgba(215, 210, 240, 0.35)';
     for (let y = 0; y < 512; y += 64) {
-        ctx.fillRect(130, y, 3, 34);
-        ctx.fillRect(380, y, 3, 34);
+        ctx.fillRect(134, y, 4, 34);
+        ctx.fillRect(374, y, 4, 34);
     }
 
-    // Cracks in the old road
-    ctx.strokeStyle = '#0b0a0e';
+    // Stylised cracks
+    ctx.strokeStyle = '#151221';
     ctx.lineWidth = 2;
-    for (let c = 0; c < 18; c++) {
+    for (let c = 0; c < 14; c++) {
         ctx.beginPath();
         let cx = 40 + Math.random() * 430;
         let cy = Math.random() * 512;
@@ -272,10 +311,10 @@ function createCryptStoneTexture() {
     cvs.width = 128;
     cvs.height = 128;
     const ctx = cvs.getContext('2d');
-    ctx.fillStyle = '#3b3742';
+    ctx.fillStyle = '#4e4663';
     ctx.fillRect(0, 0, 128, 128);
     for (let i = 0; i < 800; i++) {
-        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.14)';
+        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.14)';
         ctx.fillRect(Math.random() * 128, Math.random() * 128, 3, 3);
     }
     const tex = new THREE.CanvasTexture(cvs);
@@ -293,12 +332,12 @@ const stoneTex = createCryptStoneTexture();
 const landscapeGroup = new THREE.Group();
 scene.add(landscapeGroup);
 
-// 1. Old Cracked Road
+// 1. Haunted Road
 const roadLength = CONFIG.raceDistance + 1200;
 const roadGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, roadLength);
 const roadMat = new THREE.MeshStandardMaterial({
     map: roadTex,
-    roughness: 0.88,
+    roughness: 0.80,
     metalness: 0.05
 });
 const roadMesh = new THREE.Mesh(roadGeo, roadMat);
@@ -308,21 +347,21 @@ roadMesh.receiveShadow = true;
 landscapeGroup.add(roadMesh);
 
 // 2. Raised Stone Kerbs & Haunted Verges
-const kerbGeo = new THREE.BoxGeometry(2.5, 0.8, roadLength);
-const kerbMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x666170, roughness: 0.9 });
+const kerbGeo = new THREE.BoxGeometry(2.5, 0.9, roadLength);
+const kerbMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x7e7396, roughness: 0.85 });
 
 const leftKerb = new THREE.Mesh(kerbGeo, kerbMat);
-leftKerb.position.set(-(CONFIG.roadWidth / 2) - 1.25, 0.4, CONFIG.raceDistance / 2);
+leftKerb.position.set(-(CONFIG.roadWidth / 2) - 1.25, 0.45, CONFIG.raceDistance / 2);
 leftKerb.receiveShadow = true;
 landscapeGroup.add(leftKerb);
 
 const rightKerb = new THREE.Mesh(kerbGeo, kerbMat);
-rightKerb.position.set((CONFIG.roadWidth / 2) + 1.25, 0.4, CONFIG.raceDistance / 2);
+rightKerb.position.set((CONFIG.roadWidth / 2) + 1.25, 0.45, CONFIG.raceDistance / 2);
 rightKerb.receiveShadow = true;
 landscapeGroup.add(rightKerb);
 
 const vergeGeo = new THREE.BoxGeometry(340, 20, roadLength);
-const vergeMat = new THREE.MeshStandardMaterial({ color: 0x161f14, roughness: 0.95 });
+const vergeMat = new THREE.MeshStandardMaterial({ color: 0x1e2c22, roughness: 0.92 });
 
 const leftVerge = new THREE.Mesh(vergeGeo, vergeMat);
 leftVerge.position.set(-208, -9.8, CONFIG.raceDistance / 2);
@@ -336,19 +375,18 @@ landscapeGroup.add(rightVerge);
 
 // 3. Full Moon & Starfield
 const moonGroup = new THREE.Group();
-const moonGeo = new THREE.SphereGeometry(55, 32, 32);
-const moonMat = new THREE.MeshBasicMaterial({ color: 0xfff3d1, fog: false });
+const moonGeo = new THREE.SphereGeometry(58, 32, 32);
+const moonMat = new THREE.MeshBasicMaterial({ color: 0xfff5d6, fog: false });
 const moonMesh = new THREE.Mesh(moonGeo, moonMat);
 moonGroup.add(moonMesh);
 
-// Moon Halo Glow
 const haloCanvas = document.createElement('canvas');
 haloCanvas.width = 128; haloCanvas.height = 128;
 const hCtx = haloCanvas.getContext('2d');
 const hGrad = hCtx.createRadialGradient(64, 64, 10, 64, 64, 64);
-hGrad.addColorStop(0, 'rgba(255, 235, 180, 0.55)');
-hGrad.addColorStop(0.5, 'rgba(255, 160, 60, 0.18)');
-hGrad.addColorStop(1, 'rgba(255, 140, 0, 0)');
+hGrad.addColorStop(0, 'rgba(255, 240, 190, 0.65)');
+hGrad.addColorStop(0.5, 'rgba(255, 160, 60, 0.25)');
+hGrad.addColorStop(1, 'rgba(180, 100, 255, 0)');
 hCtx.fillStyle = hGrad;
 hCtx.fillRect(0, 0, 128, 128);
 const haloSprite = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -356,13 +394,13 @@ const haloSprite = new THREE.Sprite(new THREE.SpriteMaterial({
     blending: THREE.AdditiveBlending,
     fog: false
 }));
-haloSprite.scale.set(260, 260, 1);
+haloSprite.scale.set(290, 290, 1);
 moonGroup.add(haloSprite);
 moonGroup.position.set(80, 210, CONFIG.raceDistance + 550);
 scene.add(moonGroup);
 
 // Stars
-const starCount = 400;
+const starCount = 450;
 const starPositions = new Float32Array(starCount * 3);
 for (let i = 0; i < starCount; i++) {
     starPositions[i * 3] = (Math.random() - 0.5) * 1400;
@@ -371,10 +409,10 @@ for (let i = 0; i < starCount; i++) {
 }
 const starGeo = new THREE.BufferGeometry();
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, fog: false });
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2.4, fog: false });
 scene.add(new THREE.Points(starGeo, starMat));
 
-// 4. Instanced Spooky Dead Trees (High performance: 2 draw calls for all trees)
+// 4. Instanced Spooky Dead Trees
 function buildInstancedSpookyTrees() {
     const treePlacements = [];
     for (let z = -320; z < CONFIG.raceDistance + 280; z += 14) {
@@ -397,7 +435,7 @@ function buildInstancedSpookyTrees() {
     }
 
     const count = treePlacements.length;
-    const barkMat = new THREE.MeshStandardMaterial({ color: 0x241914, roughness: 0.95, flatShading: true });
+    const barkMat = new THREE.MeshStandardMaterial({ color: 0x352438, roughness: 0.90, flatShading: true });
     const trunkGeo = new THREE.CylinderGeometry(0.6, 1.8, 10, 6);
     const branchGeo = new THREE.ConeGeometry(0.65, 6.5, 5);
 
@@ -414,28 +452,24 @@ function buildInstancedSpookyTrees() {
     const branchDummy = new THREE.Object3D();
 
     treePlacements.forEach((t, idx) => {
-        // Main twisted trunk
         dummy.position.set(t.x, t.scale * 4.5, t.z);
         dummy.rotation.set((Math.random() - 0.5) * 0.15, t.rotY, (Math.random() - 0.5) * 0.15);
         dummy.scale.set(t.scale, t.scale, t.scale);
         dummy.updateMatrix();
         trunkInst.setMatrixAt(idx, dummy.matrix);
 
-        // Left gnarly limb
         branchDummy.position.set(t.x + Math.cos(t.rotY) * 1.8 * t.scale, t.scale * 7.5, t.z + Math.sin(t.rotY) * 1.8 * t.scale);
         branchDummy.rotation.set(0.5, t.rotY, -0.75);
         branchDummy.scale.set(t.scale, t.scale, t.scale);
         branchDummy.updateMatrix();
         branch1Inst.setMatrixAt(idx, branchDummy.matrix);
 
-        // Right gnarly limb
         branchDummy.position.set(t.x - Math.cos(t.rotY) * 1.6 * t.scale, t.scale * 6.8, t.z - Math.sin(t.rotY) * 1.6 * t.scale);
         branchDummy.rotation.set(-0.4, t.rotY + 1.1, 0.8);
         branchDummy.scale.set(t.scale * 0.9, t.scale * 0.9, t.scale * 0.9);
         branchDummy.updateMatrix();
         branch2Inst.setMatrixAt(idx, branchDummy.matrix);
 
-        // Top crooked spire
         branchDummy.position.set(t.x, t.scale * 9.8, t.z);
         branchDummy.rotation.set(0.25, t.rotY + 2.0, 0.2);
         branchDummy.scale.set(t.scale * 0.75, t.scale * 0.85, t.scale * 0.75);
@@ -459,7 +493,7 @@ function buildInstancedGravestones() {
         }
     }
     const graveGeo = new THREE.BoxGeometry(2.2, 3.6, 0.6);
-    const graveMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x565264, roughness: 0.9 });
+    const graveMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x6f6687, roughness: 0.85 });
     const graveInst = new THREE.InstancedMesh(graveGeo, graveMat, graves.length);
     graveInst.castShadow = true;
     graveInst.receiveShadow = true;
@@ -476,15 +510,15 @@ function buildInstancedGravestones() {
 }
 buildInstancedGravestones();
 
-// 6. Track Sidings (Weathered Haunted Crypt Billboards preserving sponsor images)
+// 6. Track Sidings (Preserving all sponsor images)
 function createTrackSiding(imagePath, x, z, side) {
     const group = new THREE.Group();
     const length = 55, height = 10, depth = 2;
     const baseGeo = new THREE.BoxGeometry(depth, height, length);
     const baseMat = new THREE.MeshStandardMaterial({
         map: stoneTex,
-        roughness: 0.92,
-        color: 0x5c5366
+        roughness: 0.88,
+        color: 0x6e6380
     });
 
     const base = new THREE.Mesh(baseGeo, baseMat);
@@ -521,35 +555,40 @@ for (let z = 0; z <= CONFIG.raceDistance; z += sidingInterval) {
     landscapeGroup.add(createTrackSiding(img2, 85, z, 1));
 }
 
-// 7. Roadside Jack-o'-Lanterns (Replaces water buoys)
-const pumpkinOuterMat = new THREE.MeshStandardMaterial({ color: 0xe65100, roughness: 0.6 });
+// 7. Bright Roadside Jack-o'-Lanterns & Spectral Lantern Accents
+const pumpkinOuterMat = new THREE.MeshStandardMaterial({
+    color: 0xff6d00,
+    roughness: 0.45,
+    emissive: 0x4a1800,
+    emissiveIntensity: 0.45
+});
 const pumpkinGlowMat = new THREE.MeshStandardMaterial({
-    color: 0xffea00,
-    emissive: 0xff6d00,
+    color: 0xfff176,
+    emissive: 0xff9100,
     emissiveIntensity: 1.0
 });
 
 function buildRoadsidePumpkins() {
     const positions = [];
-    for (let z = 0; z <= CONFIG.raceDistance; z += 40) {
-        positions.push({ x: -35.5, z: z, rot: 0.4 });
-        positions.push({ x: 35.5, z: z, rot: -0.4 });
+    for (let z = 0; z <= CONFIG.raceDistance; z += 36) {
+        positions.push({ x: -35.8, z: z, rot: 0.4 });
+        positions.push({ x: 35.8, z: z, rot: -0.4 });
     }
-    const bodyGeo = new THREE.SphereGeometry(1.45, 12, 10);
+    const bodyGeo = new THREE.SphereGeometry(1.65, 14, 12);
     bodyGeo.scale(1.15, 0.88, 1.15);
-    const coreGeo = new THREE.SphereGeometry(1.15, 8, 8);
+    const coreGeo = new THREE.SphereGeometry(1.32, 10, 10);
 
     const bodyInst = new THREE.InstancedMesh(bodyGeo, pumpkinOuterMat, positions.length);
     const glowInst = new THREE.InstancedMesh(coreGeo, pumpkinGlowMat, positions.length);
 
     const dummy = new THREE.Object3D();
     positions.forEach((p, idx) => {
-        dummy.position.set(p.x, 1.1, p.z);
+        dummy.position.set(p.x, 1.25, p.z);
         dummy.rotation.set(0, p.rot, 0);
         dummy.updateMatrix();
         bodyInst.setMatrixAt(idx, dummy.matrix);
 
-        dummy.position.set(p.x + (p.x < 0 ? 0.35 : -0.35), 1.15, p.z + 0.15);
+        dummy.position.set(p.x + (p.x < 0 ? 0.38 : -0.38), 1.30, p.z + 0.18);
         dummy.updateMatrix();
         glowInst.setMatrixAt(idx, dummy.matrix);
     });
@@ -563,9 +602,9 @@ const checkCanvas = document.createElement('canvas');
 checkCanvas.width = 576;
 checkCanvas.height = 64;
 const checkCtx = checkCanvas.getContext('2d');
-checkCtx.fillStyle = '#140b1c';
+checkCtx.fillStyle = '#180d28';
 checkCtx.fillRect(0, 0, 576, 64);
-checkCtx.fillStyle = '#ff6d00';
+checkCtx.fillStyle = '#ff8000';
 for (let y = 0; y < 2; y++) {
     for (let x = 0; x < 18; x++) {
         if ((x + y) % 2 === 0) checkCtx.fillRect(x * 32, y * 32, 32, 32);
@@ -576,12 +615,12 @@ checkTex.magFilter = THREE.NearestFilter;
 
 const fBanner = new THREE.Mesh(
     new THREE.BoxGeometry(74, 7, 2),
-    new THREE.MeshStandardMaterial({ map: checkTex, roughness: 0.7 })
+    new THREE.MeshStandardMaterial({ map: checkTex, roughness: 0.6, emissive: 0x261000 })
 );
 fBanner.position.set(0, 21, CONFIG.raceDistance);
 fBanner.castShadow = true;
 
-const pillarMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x3e3546, roughness: 0.9 });
+const pillarMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x5c4f70, roughness: 0.85 });
 const p1 = new THREE.Mesh(new THREE.BoxGeometry(3.5, 25, 3.5), pillarMat);
 p1.position.set(-36, 12.5, CONFIG.raceDistance);
 p1.castShadow = true;
@@ -593,7 +632,7 @@ scene.add(finishGroup);
 
 // Road Start & Finish Paint Strips
 const lineStripGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, 3.5);
-const startLineMat = new THREE.MeshBasicMaterial({ map: checkTex, transparent: true, opacity: 0.85 });
+const startLineMat = new THREE.MeshBasicMaterial({ map: checkTex, transparent: true, opacity: 0.92 });
 const startLineStrip = new THREE.Mesh(lineStripGeo, startLineMat);
 startLineStrip.rotation.x = -Math.PI / 2;
 startLineStrip.position.set(0, 0.04, 0);
@@ -604,7 +643,7 @@ finishLineStrip.position.set(0, 0.04, CONFIG.raceDistance);
 scene.add(finishLineStrip);
 
 /**
- * OBJECT-POOLED FOOTSTEP DUST / ECTO-MIST SYSTEM (Zero GC Churn)
+ * OBJECT-POOLED FOOTSTEP DUST / ECTO-MIST SYSTEM
  */
 const mistGroup = new THREE.Group();
 scene.add(mistGroup);
@@ -614,15 +653,15 @@ mistCanvas.width = 64;
 mistCanvas.height = 64;
 const mistCtx = mistCanvas.getContext('2d');
 const mistGrad = mistCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
-mistGrad.addColorStop(0, 'rgba(180, 160, 210, 0.55)');
-mistGrad.addColorStop(0.5, 'rgba(120, 255, 80, 0.22)');
+mistGrad.addColorStop(0, 'rgba(195, 175, 230, 0.58)');
+mistGrad.addColorStop(0.5, 'rgba(120, 255, 90, 0.25)');
 mistGrad.addColorStop(1, 'rgba(60, 20, 90, 0)');
 mistCtx.fillStyle = mistGrad;
 mistCtx.fillRect(0, 0, 64, 64);
 const mistTex = new THREE.CanvasTexture(mistCanvas);
 
 const MIST_POOL_SIZE = 100;
-const mistGeo = new THREE.PlaneGeometry(2.6, 2.6);
+const mistGeo = new THREE.PlaneGeometry(3.2, 3.2);
 const mistPool = [];
 let mistPoolIndex = 0;
 
@@ -662,7 +701,7 @@ function updateFootstepMist(delta) {
             item.active = false;
             item.mesh.visible = false;
         } else {
-            const s = item.baseScale + item.age * 2.6;
+            const s = item.baseScale + item.age * 2.8;
             item.mesh.scale.set(s, s, 1);
             item.mesh.material.opacity = 0.65 * (1 - item.age / 0.85);
         }
@@ -677,31 +716,29 @@ function resetFootstepMist() {
 }
 
 /**
- *SHARED GEOMETRIES FOR 3D ARTICULATED ZOOMBIES
+ * SHARED GEOMETRIES FOR PROCEDURAL FALLBACK RACERS
  */
 const SHARED_GEO = {
-    torso: new THREE.BoxGeometry(1.7, 2.1, 1.0),
-    headCube: new THREE.BoxGeometry(1.5, 1.5, 1.5),
-    headSphere: new THREE.SphereGeometry(0.95, 14, 12),
-    limb: new THREE.BoxGeometry(0.55, 1.65, 0.55),
-    thinBone: new THREE.CylinderGeometry(0.18, 0.18, 1.65, 6),
-    eye: new THREE.SphereGeometry(0.15, 8, 8),
-    horn: new THREE.ConeGeometry(0.25, 0.9, 6),
-    ear: new THREE.ConeGeometry(0.28, 0.75, 4),
-    witchHatBrim: new THREE.CylinderGeometry(1.4, 1.4, 0.12, 12),
-    witchHatCone: new THREE.ConeGeometry(0.85, 1.9, 10),
-    cape: new THREE.PlaneGeometry(1.9, 2.4),
-    bolt: new THREE.CylinderGeometry(0.14, 0.14, 2.0, 8),
-    snout: new THREE.BoxGeometry(0.8, 0.6, 0.9),
-    rib: new THREE.BoxGeometry(1.55, 0.2, 0.85)
+    torso: new THREE.SphereGeometry(1.0, 14, 12),
+    headSphere: new THREE.SphereGeometry(1.12, 16, 14),
+    limb: new THREE.CylinderGeometry(0.24, 0.20, 1.55, 10),
+    thinBone: new THREE.CylinderGeometry(0.16, 0.14, 1.55, 8),
+    eye: new THREE.SphereGeometry(0.22, 10, 10),
+    pupil: new THREE.SphereGeometry(0.11, 8, 8),
+    horn: new THREE.ConeGeometry(0.28, 0.9, 8),
+    ear: new THREE.ConeGeometry(0.32, 0.85, 8),
+    witchHatBrim: new THREE.CylinderGeometry(1.6, 1.6, 0.14, 14),
+    witchHatCone: new THREE.ConeGeometry(0.95, 1.95, 12),
+    cape: new THREE.PlaneGeometry(2.1, 2.4),
+    bolt: new THREE.CylinderGeometry(0.16, 0.16, 2.2, 8),
+    snout: new THREE.SphereGeometry(0.55, 10, 10),
+    rib: new THREE.BoxGeometry(1.55, 0.22, 0.85)
 };
 
-// Shift limb pivot to the top joint (shoulder/hip) for natural swinging
 SHARED_GEO.limb.translate(0, -0.7, 0);
 SHARED_GEO.thinBone.translate(0, -0.7, 0);
 SHARED_GEO.cape.translate(0, -1.1, 0);
 
-// Optional GLTF Loader – now managed by MonsterModelManager below
 const loader = new THREE.GLTFLoader();
 const dracoLoader = new THREE.DRACOLoader();
 dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
@@ -709,32 +746,24 @@ loader.setDRACOLoader(dracoLoader);
 
 /**
  * MONSTER MODEL MANAGER
- * =====================
- * Preloads all 8 GLBs before the race button becomes active.
- * Each GLB contains named nodes: Root, Body, Head, Arm_L, Arm_R, Leg_L, Leg_R, Extra.
- * Falls back to procedural geometry if a GLB fails to load.
- * Cached source models are cloned per-racer; disposed on race reset.
+ * Preloads all 8 GLBs and scales them consistently for strong visual presence.
  */
 const MONSTER_MANIFEST = [
-    { id: 0, name: 'vampire',          file: 'models/vampire.glb',          scale: 1.0, yOffset: 0 },
-    { id: 1, name: 'pumpkin-fiend',    file: 'models/pumpkin-fiend.glb',    scale: 1.0, yOffset: 0 },
-    { id: 2, name: 'cursed-mummy',     file: 'models/cursed-mummy.glb',     scale: 1.0, yOffset: 0 },
-    { id: 3, name: 'franken-zombie',   file: 'models/franken-zombie.glb',   scale: 1.0, yOffset: 0 },
-    { id: 4, name: 'spectral-banshee', file: 'models/spectral-banshee.glb', scale: 1.0, yOffset: 0.25 },
-    { id: 5, name: 'witch-imp',        file: 'models/witch-imp.glb',        scale: 1.0, yOffset: 0 },
-    { id: 6, name: 'werewolf',         file: 'models/werewolf.glb',         scale: 1.0, yOffset: 0 },
-    { id: 7, name: 'skeleton',         file: 'models/skeleton.glb',         scale: 1.0, yOffset: 0 },
+    { id: 0, name: 'vampire',          file: 'models/vampire.glb',          scale: CONFIG.racerScale, yOffset: 0 },
+    { id: 1, name: 'pumpkin-fiend',    file: 'models/pumpkin-fiend.glb',    scale: CONFIG.racerScale, yOffset: 0 },
+    { id: 2, name: 'cursed-mummy',     file: 'models/cursed-mummy.glb',     scale: CONFIG.racerScale, yOffset: 0 },
+    { id: 3, name: 'franken-zombie',   file: 'models/franken-zombie.glb',   scale: CONFIG.racerScale, yOffset: 0 },
+    { id: 4, name: 'spectral-banshee', file: 'models/spectral-banshee.glb', scale: CONFIG.racerScale, yOffset: 0.35 },
+    { id: 5, name: 'witch-imp',        file: 'models/witch-imp.glb',        scale: CONFIG.racerScale, yOffset: 0 },
+    { id: 6, name: 'werewolf',         file: 'models/werewolf.glb',         scale: CONFIG.racerScale, yOffset: 0 },
+    { id: 7, name: 'skeleton',         file: 'models/skeleton.glb',         scale: CONFIG.racerScale, yOffset: 0 }
 ];
 
 const MonsterModelManager = {
-    /** Cached source gltf.scene objects, indexed by monster id */
     _cache: new Array(8).fill(null),
-    /** Which models failed to load (use procedural fallback) */
     _failed: new Array(8).fill(false),
-    /** Whether all loads are resolved */
     ready: false,
 
-    /** Load all 8 GLBs. Returns a Promise that resolves when all are done. */
     preloadAll() {
         const startBtn = document.getElementById('start-btn');
         const loadingMsg = document.createElement('div');
@@ -753,7 +782,6 @@ const MonsterModelManager = {
                 entry.file,
                 (gltf) => {
                     this._cache[entry.id] = gltf.scene;
-                    // Ensure shadow casting on all meshes
                     gltf.scene.traverse(child => {
                         if (child.isMesh) {
                             child.castShadow = true;
@@ -770,7 +798,7 @@ const MonsterModelManager = {
                     this._failed[entry.id] = true;
                     loadedCount++;
                     if (loadingMsg) loadingMsg.textContent = `Loading racers… ${loadedCount}/8`;
-                    resolve(); // don't reject – use procedural fallback
+                    resolve();
                 }
             );
         }));
@@ -789,45 +817,31 @@ const MonsterModelManager = {
         });
     },
 
-    /**
-     * Clone a cached model for use as one racer's visual.
-     * Returns { group, rig } where rig has named nodes keyed as in script.js.
-     * Returns null if this id should use procedural fallback.
-     */
     cloneFor(monsterId) {
         const source = this._cache[monsterId];
         if (!source) return null;
 
         const entry = MONSTER_MANIFEST[monsterId];
-
-        // Deep clone the scene graph
         const clone = source.clone(true);
-
-        // Apply per-monster scale
         clone.scale.setScalar(entry.scale);
         clone.position.y = entry.yOffset;
 
-        // Extract named rig nodes
         const rig = {};
         clone.traverse(child => {
             switch (child.name) {
-                case 'Body':    rig.bodyGroup  = child; break;
-                case 'Head':    rig.headGroup  = child; break;
-                case 'Arm_L':   rig.leftArm    = child; break;
-                case 'Arm_R':   rig.rightArm   = child; break;
-                case 'Leg_L':   rig.leftLeg    = child; break;
-                case 'Leg_R':   rig.rightLeg   = child; break;
-                case 'Extra':   rig.extra       = child; break;
+                case 'Body':  rig.bodyGroup = child; break;
+                case 'Head':  rig.headGroup = child; break;
+                case 'Arm_L': rig.leftArm   = child; break;
+                case 'Arm_R': rig.rightArm  = child; break;
+                case 'Leg_L': rig.leftLeg   = child; break;
+                case 'Leg_R': rig.rightLeg  = child; break;
+                case 'Extra': rig.extra     = child; break;
             }
         });
 
         return { group: clone, rig };
     },
 
-    /**
-     * Dispose all cached source models (call between races if needed).
-     * The clones themselves are disposed when removed from scene.
-     */
     disposeCache() {
         for (let i = 0; i < 8; i++) {
             if (this._cache[i]) {
@@ -849,7 +863,6 @@ const MonsterModelManager = {
     }
 };
 
-// Start preloading immediately
 MonsterModelManager.preloadAll();
 
 function activateStartButton() {
@@ -861,30 +874,28 @@ function activateStartButton() {
     initDucks();
 }
 
-
 /**
  * 3D ARTICULATED ZOOMBIE RACER CLASS
- * Supports GLB models via MonsterModelManager with procedural fallback.
  */
 class Zoombie {
     constructor(id, name, startX) {
         this.id = id;
         this.name = name;
         this.color = COLORS[id % COLORS.length];
+        this.startX = startX;
         this.mesh = new THREE.Group();
         this.position = new THREE.Vector3(startX, 0, 0);
         this.baseSpeed = CONFIG.raceDistance / CONFIG.targetDuration;
-        this.currentSpeed = this.baseSpeed;
-        this.runCycle = Math.random() * Math.PI * 2;
+        this.currentSpeed = 0;
+        this.runCycle = this.id * 0.75;
+        this.idlePhase = this.id * 0.95;
         this.finished = false;
         this.finishTime = 0;
         this.aggressiveness = Math.random();
         this.energyCycle = Math.random() * 10;
         this.stepTimer = 0;
-        this.usingGLB = false; // whether this racer uses a loaded GLB or procedural geo
+        this.usingGLB = false;
 
-        // Articulated rig references – populated either from GLB named nodes
-        // or from the procedural buildMonsterModel() path
         this.rig = {
             bodyGroup: new THREE.Group(),
             headGroup: new THREE.Group(),
@@ -895,33 +906,52 @@ class Zoombie {
             extra: null
         };
 
-        // Attempt to use GLB model
         const glbResult = MonsterModelManager.cloneFor(id);
         if (glbResult) {
             this.usingGLB = true;
             this.mesh.add(glbResult.group);
-            // Merge GLB rig nodes into this.rig, falling back to empty groups for
-            // any node not found (keeps animation code safe)
             if (glbResult.rig.bodyGroup) this.rig.bodyGroup = glbResult.rig.bodyGroup;
             if (glbResult.rig.headGroup) this.rig.headGroup = glbResult.rig.headGroup;
             if (glbResult.rig.leftArm)   this.rig.leftArm   = glbResult.rig.leftArm;
             if (glbResult.rig.rightArm)  this.rig.rightArm  = glbResult.rig.rightArm;
             if (glbResult.rig.leftLeg)   this.rig.leftLeg   = glbResult.rig.leftLeg;
             if (glbResult.rig.rightLeg)  this.rig.rightLeg  = glbResult.rig.rightLeg;
-            if (glbResult.rig.extra)     this.rig.extra      = glbResult.rig.extra;
+            if (glbResult.rig.extra)     this.rig.extra     = glbResult.rig.extra;
         } else {
-            // Procedural fallback
             this.buildProceduralMonsterModel();
         }
 
-        if (this.id === 2 || this.id === 3) {
-            this.ZombieArms = true;
-        }
+        // Capture base transforms of rig nodes so ready/running poses never drift
+        this.baseRig = {
+            bodyY: this.rig.bodyGroup.position.y,
+            headY: this.rig.headGroup.position.y,
+            extraRotX: this.rig.extra ? this.rig.extra.rotation.x : 0
+        };
 
         this.addNameLabel();
-
-        this.mesh.position.copy(this.position);
+        this.resetToStartLine();
         scene.add(this.mesh);
+    }
+
+    resetToStartLine() {
+        this.position.set(this.startX, 0, 0);
+        this.currentSpeed = 0;
+        this.finished = false;
+        this.finishTime = 0;
+        this.stepTimer = 0;
+        this.mesh.position.set(this.startX, 0, 0);
+        this.mesh.rotation.set(0, 0, 0);
+
+        const { leftLeg, rightLeg, leftArm, rightArm, headGroup, bodyGroup, extra } = this.rig;
+        bodyGroup.position.y = this.baseRig.bodyY;
+        bodyGroup.rotation.set(0, 0, 0);
+        headGroup.position.y = this.baseRig.headY;
+        headGroup.rotation.set(0, 0, 0);
+        leftLeg.rotation.set(0, 0, 0);
+        rightLeg.rotation.set(0, 0, 0);
+        leftArm.rotation.set(0, 0, 0);
+        rightArm.rotation.set(0, 0, 0);
+        if (extra) extra.rotation.set(this.baseRig.extraRotX, 0, 0);
     }
 
     addNameLabel() {
@@ -934,27 +964,28 @@ class Zoombie {
 
         ctx.beginPath();
         ctx.moveTo(30, 0); ctx.lineTo(w, 0); ctx.lineTo(w - 30, h); ctx.lineTo(0, h);
-        ctx.fillStyle = "rgba(12, 7, 20, 0.88)";
+        ctx.fillStyle = "rgba(18, 10, 32, 0.92)";
         ctx.fill();
 
         ctx.beginPath();
-        ctx.moveTo(30, 0); ctx.lineTo(60, 0); ctx.lineTo(30, h); ctx.lineTo(0, h);
+        ctx.moveTo(30, 0); ctx.lineTo(62, 0); ctx.lineTo(32, h); ctx.lineTo(0, h);
         ctx.fillStyle = mainColor;
         ctx.fill();
 
         ctx.fillStyle = "#ffffff";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.shadowColor = "rgba(0,0,0,0.85)";
+        ctx.shadowColor = "rgba(0,0,0,0.9)";
         ctx.shadowBlur = 4;
-        ctx.font = "bold 80px 'Rajdhani'";
-        ctx.fillText(`${this.id + 1}`, 95, h / 2 + 2);
+        ctx.font = "bold 82px 'Rajdhani'";
+        ctx.fillText(`${this.id + 1}`, 96, h / 2 + 2);
 
         const sprite = new THREE.Sprite(
             new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cvs), depthWrite: false, depthTest: true })
         );
-        sprite.position.set(0, 7.2, 0);
-        sprite.scale.set(3.2, 2.5, 1);
+        // Positioned cleanly above enlarged monster heads and hats
+        sprite.position.set(0, 9.6, 0);
+        sprite.scale.set(3.8, 3.0, 1);
         sprite.frustumCulled = false;
         sprite.renderOrder = 100;
         this.mesh.add(sprite);
@@ -963,28 +994,24 @@ class Zoombie {
     buildProceduralMonsterModel() {
         const primaryMat = new THREE.MeshStandardMaterial({
             color: this.color,
-            roughness: 0.45,
-            metalness: 0.1
+            roughness: 0.42,
+            metalness: 0.08
         });
         const darkSuitMat = new THREE.MeshStandardMaterial({
-            color: 0x1a1624,
-            roughness: 0.75
+            color: 0x261b3d,
+            roughness: 0.65
         });
-        const eyeGlowMat = new THREE.MeshBasicMaterial({
-            color: (this.id === 0 || this.id === 6) ? 0xff1744 : 0x76ff03
-        });
+        const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const pupilMat = new THREE.MeshBasicMaterial({ color: 0x120a1f });
 
         const { bodyGroup, headGroup, leftArm, rightArm, leftLeg, rightLeg } = this.rig;
         bodyGroup.position.y = 1.65;
-
-        // Default limb positions
         leftLeg.position.set(-0.48, 1.55, 0);
         rightLeg.position.set(0.48, 1.55, 0);
         leftArm.position.set(-1.15, 3.25, 0);
         rightArm.position.set(1.15, 3.25, 0);
         headGroup.position.set(0, 3.65, 0);
 
-        // Is this the Skeleton (#8 White)? Use thin bone geometry and ribcage
         const limbGeo = (this.id === 7) ? SHARED_GEO.thinBone : SHARED_GEO.limb;
 
         const lLegMesh = new THREE.Mesh(limbGeo, this.id === 7 ? primaryMat : darkSuitMat);
@@ -992,216 +1019,305 @@ class Zoombie {
         const lArmMesh = new THREE.Mesh(limbGeo, primaryMat);
         const rArmMesh = new THREE.Mesh(limbGeo, primaryMat);
 
-        lLegMesh.castShadow = true;
-        rLegMesh.castShadow = true;
-        lArmMesh.castShadow = true;
-        rArmMesh.castShadow = true;
+        lLegMesh.castShadow = true; rLegMesh.castShadow = true;
+        lArmMesh.castShadow = true; rArmMesh.castShadow = true;
 
-        leftLeg.add(lLegMesh);
-        rightLeg.add(rLegMesh);
-        leftArm.add(lArmMesh);
-        rightArm.add(rArmMesh);
+        leftLeg.add(lLegMesh); rightLeg.add(rLegMesh);
+        leftArm.add(lArmMesh); rightArm.add(rArmMesh);
 
-        // Torso
-        if (this.id === 7) {
-            // Skeleton ribcage
-            const spine = new THREE.Mesh(SHARED_GEO.thinBone, primaryMat);
-            spine.position.y = 1.85;
-            bodyGroup.add(spine);
-            for (let r = 0; r < 3; r++) {
-                const rib = new THREE.Mesh(SHARED_GEO.rib, primaryMat);
-                rib.position.y = 0.4 + r * 0.5;
-                rib.castShadow = true;
-                bodyGroup.add(rib);
-            }
-        } else {
-            const torsoMesh = new THREE.Mesh(
-                SHARED_GEO.torso,
-                (this.id === 0 || this.id === 5) ? darkSuitMat : primaryMat
-            );
-            torsoMesh.position.y = 0.85;
-            torsoMesh.castShadow = true;
-            bodyGroup.add(torsoMesh);
-        }
+        const torsoMesh = new THREE.Mesh(SHARED_GEO.torso, primaryMat);
+        torsoMesh.scale.set(1.05, 1.15, 0.85);
+        torsoMesh.position.y = 0.85;
+        torsoMesh.castShadow = true;
+        bodyGroup.add(torsoMesh);
 
-        // Monster-specific heads and features
+        const headMesh = new THREE.Mesh(SHARED_GEO.headSphere, primaryMat);
+        headMesh.castShadow = true;
+        headGroup.add(headMesh);
+
         if (this.id === 0) {
-            // 0: RED - Vampire (Cape + High Collar + Pale/Red Head)
-            const head = new THREE.Mesh(SHARED_GEO.headCube, primaryMat);
-            head.castShadow = true;
-            headGroup.add(head);
-
-            const capeMat = new THREE.MeshStandardMaterial({ color: 0xb71c1c, side: THREE.DoubleSide, roughness: 0.6 });
+            const capeMat = new THREE.MeshStandardMaterial({ color: 0xd50000, side: THREE.DoubleSide, roughness: 0.5 });
             const cape = new THREE.Mesh(SHARED_GEO.cape, capeMat);
             cape.position.set(0, 1.8, -0.55);
-            cape.rotation.x = 0.25;
             bodyGroup.add(cape);
             this.rig.extra = cape;
-
-        } else if (this.id === 1) {
-            // 1: ORANGE - Pumpkin Fiend (Carved Jack-o'-Lantern Head)
-            const pHead = new THREE.Mesh(SHARED_GEO.headSphere, primaryMat);
-            pHead.scale.set(1.25, 1.0, 1.25);
-            pHead.castShadow = true;
-            const stem = new THREE.Mesh(SHARED_GEO.horn, new THREE.MeshStandardMaterial({ color: 0x33691e }));
-            stem.position.y = 1.0;
-            headGroup.add(pHead, stem);
-
-        } else if (this.id === 2) {
-            // 2: YELLOW - Cursed Mummy (Wrapped head + trailing bandage)
-            const mHead = new THREE.Mesh(SHARED_GEO.headCube, primaryMat);
-            mHead.castShadow = true;
-            headGroup.add(mHead);
-            // Outstretched mummy arms
-            this.ZombieArms = true;
-
-        } else if (this.id === 3) {
-            // 3: GREEN - Franken-Zombie (Flat head + metallic neck bolts + outstretched arms)
-            const fHead = new THREE.Mesh(SHARED_GEO.headCube, primaryMat);
-            fHead.scale.set(1.05, 1.2, 1.0);
-            fHead.castShadow = true;
-            const hair = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.35, 1.6), darkSuitMat);
-            hair.position.y = 0.8;
-            const bolts = new THREE.Mesh(SHARED_GEO.bolt, new THREE.MeshStandardMaterial({ color: 0xb0bec5, metalness: 0.8 }));
-            bolts.rotation.z = Math.PI / 2;
-            bolts.position.y = -0.3;
-            headGroup.add(fHead, hair, bolts);
-            this.ZombieArms = true;
-
-        } else if (this.id === 4) {
-            // 4: BLUE - Spectral Banshee (Curved Demon Horns + Glowing Core)
-            const bHead = new THREE.Mesh(SHARED_GEO.headSphere, primaryMat);
-            bHead.castShadow = true;
-            const hL = new THREE.Mesh(SHARED_GEO.horn, darkSuitMat);
-            hL.position.set(-0.65, 0.85, 0);
-            hL.rotation.z = 0.45;
-            const hR = new THREE.Mesh(SHARED_GEO.horn, darkSuitMat);
-            hR.position.set(0.65, 0.85, 0);
-            hR.rotation.z = -0.45;
-            headGroup.add(bHead, hL, hR);
-
         } else if (this.id === 5) {
-            // 5: PURPLE - Witch-Imp (Pointed Witch Hat + Cape)
-            const wHead = new THREE.Mesh(SHARED_GEO.headCube, primaryMat);
-            wHead.castShadow = true;
             const brim = new THREE.Mesh(SHARED_GEO.witchHatBrim, darkSuitMat);
-            brim.position.y = 0.78;
-            const cone = new THREE.Mesh(SHARED_GEO.witchHatCone, primaryMat);
-            cone.position.y = 1.7;
-            headGroup.add(wHead, brim, cone);
-
-        } else if (this.id === 6) {
-            // 6: GREY - Werewolf (Wolf Snout + Pointed Ears + Tail)
-            const wolfHead = new THREE.Mesh(SHARED_GEO.headCube, primaryMat);
-            wolfHead.castShadow = true;
-            const snout = new THREE.Mesh(SHARED_GEO.snout, primaryMat);
-            snout.position.set(0, -0.2, 0.95);
-            const earL = new THREE.Mesh(SHARED_GEO.ear, primaryMat);
-            earL.position.set(-0.5, 1.0, 0);
-            const earR = new THREE.Mesh(SHARED_GEO.ear, primaryMat);
-            earR.position.set(0.5, 1.0, 0);
-            headGroup.add(wolfHead, snout, earL, earR);
-
-        } else {
-            // 7: WHITE - Skeleton (Skull Head)
-            const skull = new THREE.Mesh(SHARED_GEO.headSphere, primaryMat);
-            skull.scale.set(0.95, 1.1, 1.05);
-            skull.castShadow = true;
-            headGroup.add(skull);
+            brim.position.y = 0.85;
+            const cone = new THREE.Mesh(SHARED_GEO.witchHatCone, darkSuitMat);
+            cone.position.y = 1.80;
+            headGroup.add(brim, cone);
         }
 
-        // Glowing Monster Eyes (facing forward along +Z)
-        const eyeL = new THREE.Mesh(SHARED_GEO.eye, eyeGlowMat);
-        eyeL.position.set(-0.35, 0.15, 0.78);
-        const eyeR = new THREE.Mesh(SHARED_GEO.eye, eyeGlowMat);
-        eyeR.position.set(0.35, 0.15, 0.78);
-        headGroup.add(eyeL, eyeR);
+        const eyeL = new THREE.Mesh(SHARED_GEO.eye, whiteMat);
+        eyeL.position.set(-0.38, 0.15, 0.96);
+        const eyeR = new THREE.Mesh(SHARED_GEO.eye, whiteMat);
+        eyeR.position.set(0.38, 0.15, 0.96);
+        const pupL = new THREE.Mesh(SHARED_GEO.pupil, pupilMat);
+        pupL.position.set(-0.36, 0.15, 1.12);
+        const pupR = new THREE.Mesh(SHARED_GEO.pupil, pupilMat);
+        pupR.position.set(0.36, 0.15, 1.12);
+        headGroup.add(eyeL, eyeR, pupL, pupR);
 
-        this.mesh.add(bodyGroup, headGroup, leftArm, rightArm, leftLeg, rightLeg);
-        this.mesh.scale.set(1.15, 1.15, 1.15);
+        const rootScaleGroup = new THREE.Group();
+        rootScaleGroup.scale.setScalar(CONFIG.racerScale);
+        rootScaleGroup.add(bodyGroup, headGroup, leftArm, rightArm, leftLeg, rightLeg);
+        this.mesh.add(rootScaleGroup);
     }
 
-    update(delta, time) {
-        if (!this.finished) {
-            const energy = Math.sin(time * 0.5 + this.energyCycle);
-            let targetSpeed = this.baseSpeed;
-            if (energy > 0.5) targetSpeed *= 1.2 + (this.aggressiveness * 0.2);
-            else if (energy < -0.5) targetSpeed *= 0.85;
-            targetSpeed += (Math.random() - 0.5) * 2.0;
+    /**
+     * Restrained character-specific ready/idle pose during READY and COUNTDOWN states.
+     * No running cycle or forward/lateral drift occurs here.
+     */
+    updateReadyPose(time) {
+        this.position.set(this.startX, 0, 0);
+        this.mesh.position.x = this.startX;
+        this.mesh.position.z = 0;
 
-            const distRemaining = CONFIG.raceDistance - this.position.z;
-            if (distRemaining < 100 && distRemaining > 0) targetSpeed *= 1.1;
+        const { leftLeg, rightLeg, leftArm, rightArm, headGroup, bodyGroup, extra } = this.rig;
+        const t = time * 2.4 + this.idlePhase;
+        const breathe = Math.sin(t) * 0.05;
 
-            this.currentSpeed = targetSpeed;
-            this.position.z += targetSpeed * delta;
+        // Feet remain planted on the starting line
+        leftLeg.rotation.set(0, 0, 0);
+        rightLeg.rotation.set(0, 0, 0);
+        this.mesh.position.y = 0;
+        this.mesh.rotation.set(0, 0, 0);
 
-            if (this.position.x > 26) this.position.x -= 5 * delta;
-            else if (this.position.x < -26) this.position.x += 5 * delta;
-            else this.position.x += Math.sin(time + this.id * 10) * 2 * delta;
+        bodyGroup.position.y = this.baseRig.bodyY + breathe;
+        bodyGroup.rotation.set(0, 0, 0);
+        headGroup.position.y = this.baseRig.headY + breathe * 0.5;
+        headGroup.rotation.set(Math.sin(t * 0.7) * 0.04, Math.sin(t * 0.5) * 0.08, 0);
+
+        switch (this.id) {
+            case 0: // Vampire: poised dramatic stance, slight cape flutter
+                leftArm.rotation.set(-0.22, 0, 0.15);
+                rightArm.rotation.set(-0.35, 0, -0.22);
+                if (extra) extra.rotation.set(0.18 + Math.sin(t * 1.4) * 0.07, Math.cos(t) * 0.05, 0);
+                break;
+
+            case 1: // Pumpkin Fiend: cheerful gentle vertical bounce in place
+                bodyGroup.position.y = this.baseRig.bodyY + Math.abs(Math.sin(t * 1.3)) * 0.11;
+                headGroup.rotation.z = Math.sin(t * 1.3) * 0.06;
+                leftArm.rotation.set(-0.15, 0, 0.20 + Math.sin(t * 1.3) * 0.05);
+                rightArm.rotation.set(-0.15, 0, -0.20 - Math.sin(t * 1.3) * 0.05);
+                break;
+
+            case 2: // Cursed Mummy: slight clumsy sway with loose bandage movement
+                bodyGroup.rotation.z = Math.sin(t * 0.9) * 0.06;
+                headGroup.rotation.z = Math.sin(t * 0.9 - 0.5) * 0.08;
+                leftArm.rotation.set(-0.55 + Math.sin(t) * 0.06, 0, 0.08);
+                rightArm.rotation.set(-0.50 + Math.cos(t) * 0.06, 0, -0.08);
+                if (extra) extra.rotation.set(0.22 + Math.sin(t * 1.6) * 0.10, Math.sin(t) * 0.08, 0);
+                break;
+
+            case 3: // Franken-Zombie: restrained heavy shoulder heave
+                bodyGroup.position.y = this.baseRig.bodyY + Math.sin(t * 0.8) * 0.07;
+                bodyGroup.rotation.x = 0.05 + Math.sin(t * 0.8) * 0.03;
+                leftArm.rotation.set(-0.32 + Math.sin(t * 0.8) * 0.05, 0, 0.12);
+                rightArm.rotation.set(-0.32 + Math.sin(t * 0.8) * 0.05, 0, -0.12);
+                break;
+
+            case 4: // Spectral Banshee: gentle floating & bobbing motion
+                this.mesh.position.y = 0.22 + Math.sin(t * 1.2) * 0.18;
+                bodyGroup.rotation.z = Math.sin(t * 0.8) * 0.05;
+                leftArm.rotation.set(-0.28 + Math.sin(t * 1.2) * 0.08, 0, 0.25);
+                rightArm.rotation.set(-0.28 + Math.cos(t * 1.2) * 0.08, 0, -0.25);
+                if (extra) extra.rotation.set(0.25 + Math.sin(t * 1.8) * 0.10, 0, 0);
+                break;
+
+            case 5: // Witch-Imp: mischievous small bounce & crooked hat tilt
+                bodyGroup.position.y = this.baseRig.bodyY + Math.abs(Math.sin(t * 1.5)) * 0.08;
+                headGroup.rotation.z = 0.05 + Math.sin(t * 1.5) * 0.07;
+                leftArm.rotation.set(-0.20, 0, 0.18);
+                rightArm.rotation.set(-0.20, 0, -0.18);
+                break;
+
+            case 6: // Werewolf: crouched ready stance with animated tail wag
+                bodyGroup.position.y = this.baseRig.bodyY - 0.08 + breathe;
+                bodyGroup.rotation.x = 0.14;
+                leftArm.rotation.set(-0.38, 0, 0.16);
+                rightArm.rotation.set(-0.38, 0, -0.16);
+                if (extra) extra.rotation.set(0.10, Math.sin(t * 2.8) * 0.28, Math.sin(t * 2.8) * 0.15);
+                break;
+
+            case 7: // Skeleton: slight rattling / shifting stance
+                bodyGroup.rotation.y = Math.sin(t * 1.4) * 0.07;
+                headGroup.rotation.z = Math.sin(t * 2.8) * 0.05;
+                leftArm.rotation.set(-0.12, 0, 0.14 + Math.sin(t * 2.8) * 0.03);
+                rightArm.rotation.set(-0.12, 0, -0.14 - Math.sin(t * 2.8) * 0.03);
+                break;
         }
+    }
+
+    /**
+     * Character-specific racing animations and forward locomotion once RACE_STATE.RACING begins.
+     */
+    updateRacingMovement(delta, time) {
+        const energy = Math.sin(time * 0.5 + this.energyCycle);
+        let targetSpeed = this.baseSpeed;
+        if (energy > 0.5) targetSpeed *= 1.2 + (this.aggressiveness * 0.2);
+        else if (energy < -0.5) targetSpeed *= 0.85;
+        targetSpeed += (Math.random() - 0.5) * 2.0;
+
+        const distRemaining = CONFIG.raceDistance - this.position.z;
+        if (distRemaining < 100 && distRemaining > 0) targetSpeed *= 1.1;
+
+        this.currentSpeed = targetSpeed;
+        this.position.z += targetSpeed * delta;
+
+        if (this.position.x > 27) this.position.x -= 5 * delta;
+        else if (this.position.x < -27) this.position.x += 5 * delta;
+        else this.position.x += Math.sin(time + this.id * 10) * 1.8 * delta;
 
         this.mesh.position.x = this.position.x;
         this.mesh.position.z = this.position.z;
 
         const { leftLeg, rightLeg, leftArm, rightArm, headGroup, bodyGroup, extra } = this.rig;
+        const cycleRate = this.currentSpeed * 0.92;
+        this.runCycle += delta * cycleRate;
+        const c = this.runCycle;
 
-        if (this.finished) {
-            // Victory Monster Celebration Pose
-            const cheer = Math.sin(time * 8 + this.id) * 0.35;
-            this.mesh.position.y = Math.abs(Math.sin(time * 6 + this.id)) * 0.6;
-            this.mesh.rotation.set(0, Math.sin(time * 3 + this.id) * 0.3, 0);
-            leftLeg.rotation.x = 0;
-            rightLeg.rotation.x = 0;
-            leftArm.rotation.x = Math.PI - 0.4 + cheer;
-            rightArm.rotation.x = Math.PI - 0.4 - cheer;
-            headGroup.rotation.y = Math.sin(time * 5) * 0.25;
-        } else {
-            // Articulated Running / Shambling Cycle
-            const cycleRate = isRacing ? (this.currentSpeed * 0.95) : 2.2;
-            this.runCycle += delta * cycleRate;
-
-            const legSwing = isRacing ? Math.sin(this.runCycle) * 0.95 : Math.sin(this.runCycle) * 0.12;
-            const bounce = isRacing ? Math.abs(Math.cos(this.runCycle)) * 0.42 : Math.sin(this.runCycle) * 0.06;
-
-            this.mesh.position.y = bounce;
-            // Lean forward while sprinting
-            this.mesh.rotation.x = isRacing ? 0.16 : 0;
-            this.mesh.rotation.z = Math.cos(this.runCycle) * (isRacing ? 0.08 : 0.02);
-
-            leftLeg.rotation.x = legSwing;
-            rightLeg.rotation.x = -legSwing;
-
-            if (this.ZombieArms) {
-                // Classic outstretched zombie arms bobbing menacingly
-                leftArm.rotation.x = -Math.PI / 2 + Math.sin(this.runCycle * 2) * 0.2;
-                rightArm.rotation.x = -Math.PI / 2 + Math.cos(this.runCycle * 2) * 0.2;
-            } else {
-                leftArm.rotation.x = -legSwing * 0.85;
-                rightArm.rotation.x = legSwing * 0.85;
+        switch (this.id) {
+            case 0: { // Vampire: dramatic sweeping stride & billowing cape
+                const swing = Math.sin(c) * 1.05;
+                this.mesh.position.y = Math.abs(Math.cos(c)) * 0.52;
+                this.mesh.rotation.set(0.22, 0, Math.cos(c) * 0.07);
+                leftLeg.rotation.x = swing;
+                rightLeg.rotation.x = -swing;
+                leftArm.rotation.set(-swing * 0.95 - 0.2, 0, 0.18);
+                rightArm.rotation.set(swing * 0.95 - 0.2, 0, -0.18);
+                headGroup.rotation.y = Math.sin(c * 0.5) * 0.14;
+                bodyGroup.rotation.y = -swing * 0.16;
+                if (extra) extra.rotation.set(0.55 + Math.abs(Math.sin(c)) * 0.42, Math.sin(c) * 0.12, 0);
+                break;
             }
-
-            headGroup.rotation.y = Math.sin(this.runCycle * 0.5) * 0.14;
-            bodyGroup.rotation.y = -legSwing * 0.15;
-
-            if (extra) {
-                // Billowing vampire cape
-                extra.rotation.x = 0.35 + Math.abs(Math.sin(this.runCycle)) * 0.35;
+            case 1: { // Pumpkin Fiend: bouncy weighted hop-run
+                const swing = Math.sin(c) * 0.92;
+                this.mesh.position.y = Math.abs(Math.cos(c)) * 0.72;
+                this.mesh.rotation.set(0.14, 0, Math.sin(c) * 0.11);
+                leftLeg.rotation.x = swing;
+                rightLeg.rotation.x = -swing;
+                leftArm.rotation.set(-swing * 0.85, 0, 0.28);
+                rightArm.rotation.set(swing * 0.85, 0, -0.28);
+                headGroup.rotation.z = -Math.sin(c) * 0.12;
+                bodyGroup.rotation.y = -swing * 0.14;
+                break;
             }
-
-            if (isRacing) {
-                this.stepTimer += delta;
-                if (this.stepTimer > 0.16) {
-                    spawnFootstepMist(this.position.x, this.position.z - 1.2, 0.55 + Math.random() * 0.45);
-                    this.stepTimer = 0;
-                }
+            case 2: { // Cursed Mummy: comical outstretched shambling run
+                const swing = Math.sin(c * 0.95) * 0.86;
+                this.mesh.position.y = Math.abs(Math.cos(c * 0.95)) * 0.38;
+                this.mesh.rotation.set(0.18, 0, Math.sin(c * 0.95) * 0.15);
+                leftLeg.rotation.x = swing;
+                rightLeg.rotation.x = -swing;
+                leftArm.rotation.set(-Math.PI * 0.46 + Math.sin(c * 1.9) * 0.22, 0, 0.08);
+                rightArm.rotation.set(-Math.PI * 0.46 + Math.cos(c * 1.9) * 0.22, 0, -0.08);
+                headGroup.rotation.z = Math.cos(c * 0.95) * 0.14;
+                if (extra) extra.rotation.set(0.65 + Math.abs(Math.sin(c * 1.5)) * 0.35, Math.sin(c) * 0.20, 0);
+                break;
             }
+            case 3: { // Franken-Zombie: heavy powerful lumbering charge
+                const swing = Math.sin(c * 0.85) * 0.95;
+                this.mesh.position.y = Math.abs(Math.cos(c * 0.85)) * 0.46;
+                this.mesh.rotation.set(0.20, 0, Math.cos(c * 0.85) * 0.12);
+                leftLeg.rotation.x = swing;
+                rightLeg.rotation.x = -swing;
+                leftArm.rotation.set(-0.65 - swing * 0.70, 0, 0.16);
+                rightArm.rotation.set(-0.65 + swing * 0.70, 0, -0.16);
+                bodyGroup.rotation.y = -swing * 0.22;
+                headGroup.rotation.y = Math.sin(c * 0.42) * 0.12;
+                break;
+            }
+            case 4: { // Spectral Banshee: rapid swooping float instead of ordinary leg cycle
+                this.mesh.position.y = 0.48 + Math.sin(c * 0.75) * 0.42;
+                this.mesh.rotation.set(0.28, Math.sin(c * 0.4) * 0.10, Math.cos(c * 0.5) * 0.10);
+                leftLeg.rotation.x = 0.35 + Math.sin(c * 1.4) * 0.25;
+                rightLeg.rotation.x = 0.35 + Math.cos(c * 1.4) * 0.25;
+                leftArm.rotation.set(-0.45 + Math.sin(c * 0.8) * 0.35, 0, 0.35);
+                rightArm.rotation.set(-0.45 + Math.cos(c * 0.8) * 0.35, 0, -0.35);
+                headGroup.rotation.x = -0.15;
+                if (extra) extra.rotation.set(0.65 + Math.sin(c * 1.6) * 0.28, 0, 0);
+                break;
+            }
+            case 5: { // Witch-Imp: fast energetic scurrying run
+                const swing = Math.sin(c * 1.18) * 1.08;
+                this.mesh.position.y = Math.abs(Math.cos(c * 1.18)) * 0.54;
+                this.mesh.rotation.set(0.20, 0, Math.cos(c * 1.18) * 0.09);
+                leftLeg.rotation.x = swing;
+                rightLeg.rotation.x = -swing;
+                leftArm.rotation.set(-swing * 1.05, 0, 0.22);
+                rightArm.rotation.set(swing * 1.05, 0, -0.22);
+                headGroup.rotation.z = Math.sin(c * 1.18) * 0.10;
+                if (extra) extra.rotation.x = 0.50 + Math.abs(Math.sin(c * 1.18)) * 0.35;
+                break;
+            }
+            case 6: { // Werewolf: energetic forward-leaning loping bound
+                const swing = Math.sin(c * 0.95) * 1.12;
+                this.mesh.position.y = Math.abs(Math.sin(c * 0.95)) * 0.64;
+                this.mesh.rotation.set(0.28 + Math.cos(c * 0.95) * 0.08, 0, 0);
+                leftLeg.rotation.x = swing;
+                rightLeg.rotation.x = -swing * 0.85;
+                leftArm.rotation.set(-swing * 0.95 - 0.25, 0, 0.14);
+                rightArm.rotation.set(swing * 0.95 - 0.25, 0, -0.14);
+                if (extra) extra.rotation.set(0.35 + Math.sin(c * 1.9) * 0.25, Math.cos(c) * 0.22, 0);
+                break;
+            }
+            case 7: // Skeleton: exaggerated springy articulated rattle-run
+            default: {
+                const swing = Math.sin(c * 1.08) * 1.12;
+                this.mesh.position.y = Math.abs(Math.cos(c * 1.08)) * 0.62;
+                this.mesh.rotation.set(0.15, 0, Math.cos(c * 1.08) * 0.11);
+                leftLeg.rotation.x = swing;
+                rightLeg.rotation.x = -swing;
+                leftArm.rotation.set(-swing * 1.10, 0, 0.22);
+                rightArm.rotation.set(swing * 1.10, 0, -0.22);
+                headGroup.rotation.y = Math.sin(c * 1.08) * 0.18;
+                headGroup.rotation.z = Math.cos(c * 2.16) * 0.08;
+                bodyGroup.rotation.y = -swing * 0.22;
+                break;
+            }
+        }
+
+        this.stepTimer += delta;
+        if (this.stepTimer > 0.16) {
+            spawnFootstepMist(this.position.x, this.position.z - 1.5, 0.65 + Math.random() * 0.45);
+            this.stepTimer = 0;
         }
     }
 
-    /** Clean up Three.js resources when this racer is retired */
+    updateCelebrationPose(time) {
+        const { leftLeg, rightLeg, leftArm, rightArm, headGroup, bodyGroup } = this.rig;
+        const cheer = Math.sin(time * 8 + this.id) * 0.38;
+        this.mesh.position.x = this.position.x;
+        this.mesh.position.z = this.position.z;
+        this.mesh.position.y = Math.abs(Math.sin(time * 6 + this.id)) * 0.75;
+        this.mesh.rotation.set(0, Math.sin(time * 3 + this.id) * 0.35, 0);
+        bodyGroup.rotation.set(0, 0, 0);
+        leftLeg.rotation.x = 0;
+        rightLeg.rotation.x = 0;
+        leftArm.rotation.set(Math.PI - 0.4 + cheer, 0, 0.2);
+        rightArm.rotation.set(Math.PI - 0.4 - cheer, 0, -0.2);
+        headGroup.rotation.set(0, Math.sin(time * 5) * 0.25, 0);
+    }
+
+    update(delta, time) {
+        if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
+            this.updateReadyPose(time);
+            return;
+        }
+
+        if (this.finished || raceState === RACE_STATE.FINISHED) {
+            this.updateCelebrationPose(time);
+            return;
+        }
+
+        if (raceState === RACE_STATE.RACING) {
+            this.updateRacingMovement(delta, time);
+        }
+    }
+
     dispose() {
         this.mesh.traverse(child => {
-            // Only dispose unique materials if not using cached GLB
             if (!this.usingGLB && child.isMesh && child.material) {
                 if (Array.isArray(child.material)) {
                     child.material.forEach(m => m.dispose());
@@ -1209,7 +1325,6 @@ class Zoombie {
                     child.material.dispose();
                 }
             }
-            // Dispose unique racer name sprite texture & material
             if (child.isSprite && child.material) {
                 child.material.map?.dispose();
                 child.material.dispose();
@@ -1236,16 +1351,32 @@ function initDucks() {
     const headerTitle = document.getElementById('header-race-name');
     if (headerTitle) headerTitle.innerText = raceConfig.name.toUpperCase();
 
-    const spacing = 5.5;
+    // Evenly spaced, straight starting line across the road width
+    const spacing = 7.4;
     const leftBound = -((CONFIG.duckCount - 1) * spacing) / 2;
 
     for (let i = 0; i < CONFIG.duckCount; i++) {
-        const x = leftBound + (i * spacing) + ((Math.random() - 0.5) * 1.2);
+        const x = leftBound + (i * spacing);
         const name = names[i % names.length] || `Zoombie ${i + 1}`;
         ducks.push(new Zoombie(i, name, x));
     }
 
     initLeaderboardDOM();
+}
+
+function resetRacersToStartGrid() {
+    if (ducks.length !== CONFIG.duckCount) {
+        initDucks();
+        return;
+    }
+    const spacing = 7.4;
+    const leftBound = -((CONFIG.duckCount - 1) * spacing) / 2;
+    ducks.sort((a, b) => a.id - b.id);
+    for (let i = 0; i < ducks.length; i++) {
+        ducks[i].startX = leftBound + (i * spacing);
+        ducks[i].resetToStartLine();
+    }
+    resetFootstepMist();
 }
 
 function initLeaderboardDOM() {
@@ -1464,6 +1595,10 @@ function updateDuckPreview() {
 
 raceSelect.addEventListener('change', (e) => {
     currentRaceIndex = parseInt(e.target.value, 10);
+    setRaceState(RACE_STATE.READY);
+    firstFinishTriggered = false;
+    progressFill.style.width = "0%";
+    if (speedEl) speedEl.innerText = "0";
     updateDuckPreview();
     initDucks();
 });
@@ -1492,6 +1627,7 @@ saveConfigBtn.addEventListener('click', () => {
     storedRaces.push(newRace);
     saveRaceData();
     currentRaceIndex = storedRaces.length - 1;
+    setRaceState(RACE_STATE.READY);
     populateRaceSelector();
     updateDuckPreview();
     initDucks();
@@ -1506,13 +1642,14 @@ resetDataBtn.addEventListener('click', () => {
 document.getElementById('start-btn').addEventListener('click', () => {
     startScreen.classList.add('hidden');
 
-    camera.position.set(0, 15, -30);
-    camera.lookAt(0, 0, 50);
-
+    // Reset all racers cleanly onto the starting line in READY/COUNTDOWN stance
+    resetRacersToStartGrid();
     firstFinishTriggered = false;
-    raceEnded = false;
-    isRacing = false;
-    isCountingDown = true;
+    setRaceState(RACE_STATE.COUNTDOWN);
+
+    camera.position.set(0, 12, 34);
+    cameraLookAt.set(0, 3.8, 0);
+    camera.lookAt(cameraLookAt);
 
     raceAudio.init();
 
@@ -1525,6 +1662,11 @@ document.getElementById('start-btn').addEventListener('click', () => {
 });
 
 function runCountdownSequence() {
+    if (countdownTimerId) {
+        clearInterval(countdownTimerId);
+        countdownTimerId = null;
+    }
+
     const cd = document.getElementById('countdown-overlay');
     cd.innerHTML = '';
     cd.style.display = 'flex';
@@ -1551,21 +1693,27 @@ function runCountdownSequence() {
         </div>`;
     };
 
-    const timer = setInterval(() => {
+    // Immediately show '3' so the 3-2-1 sequence is crisp and responsive
+    showNum(count, '#ffab40');
+    raceAudio.playCountdown(count);
+    count--;
+
+    countdownTimerId = setInterval(() => {
         if (count > 0) {
             showNum(count, '#ffab40');
             raceAudio.playCountdown(count);
             count--;
         } else {
-            clearInterval(timer);
+            clearInterval(countdownTimerId);
+            countdownTimerId = null;
             cd.innerHTML = "";
             cd.style.display = 'none';
 
             sfxStart.currentTime = 0;
             sfxStart.play().catch(e => console.warn(e));
 
-            isCountingDown = false;
-            isRacing = true;
+            // Only now does the race state switch to RACING
+            setRaceState(RACE_STATE.RACING);
         }
     }, 1000);
 }
@@ -1574,6 +1722,10 @@ document.getElementById('restart-btn').addEventListener('click', () => {
     endScreen.classList.add('hidden');
     startScreen.classList.remove('hidden');
 
+    if (countdownTimerId) {
+        clearInterval(countdownTimerId);
+        countdownTimerId = null;
+    }
     if (fadeInterval) {
         clearInterval(fadeInterval);
         fadeInterval = null;
@@ -1586,34 +1738,34 @@ document.getElementById('restart-btn').addEventListener('click', () => {
     currentRaceIndex = (currentRaceIndex + 1) % storedRaces.length;
     populateRaceSelector();
     updateDuckPreview();
-    isRacing = false;
-    raceEnded = false;
-    isCountingDown = false;
+
+    setRaceState(RACE_STATE.READY);
     firstFinishTriggered = false;
 
     progressFill.style.width = "0%";
     if (speedEl) speedEl.innerText = "0";
-    camera.position.set(0, 15, -30);
-    camera.lookAt(0, 0, 50);
     initDucks();
+    camera.position.set(0, 12, 34);
+    cameraLookAt.set(0, 3.8, 0);
+    camera.lookAt(cameraLookAt);
 });
 
 loadRaceData();
 loadAboutInfo();
 
 /**
- * CAMERA SYSTEM & DYNAMIC SHADOW TRACKING
+ * CAMERA SYSTEM & DYNAMIC LIGHT/SHADOW TRACKING
  */
 const clock = new THREE.Clock();
 let camAngle = 0, camTimer = 0;
-let cameraLookAt = new THREE.Vector3(0, 0, 50);
+let cameraLookAt = new THREE.Vector3(0, 3.8, 0);
 let cinematicTarget = new THREE.Vector3();
 let cinematicLook = new THREE.Vector3();
 
-const LB_SCREEN_FRACTION = 0.35;
-const DUCK_PADDING = 8;
-const MIN_CAM_DIST_Z = 20;
-const MAX_CAM_DIST_Z = 50;
+const LB_SCREEN_FRACTION = 0.33;
+const DUCK_PADDING = 5.5;
+const MIN_CAM_DIST_Z = 21;
+const MAX_CAM_DIST_Z = 38;
 
 function getDuckBounds() {
     let minX = Infinity, maxX = -Infinity;
@@ -1657,59 +1809,66 @@ function updateCamera(time, delta, leadDuck) {
     const bounds = getDuckBounds();
     const availableFraction = 1.0 - LB_SCREEN_FRACTION;
 
-    // Move directional moonlight shadow frustum along with the pack for crisp shadows
+    // Move directional moonlight & non-shadow fill/rim lights along with the pack
     moonLight.position.set(45, 95, bounds.centerZ + 40);
     moonLight.target.position.set(0, 0, bounds.centerZ);
     moonLight.target.updateMatrixWorld();
+
+    packFillLight.position.set(bounds.centerX - 16, 26, bounds.centerZ + 36);
+    packFillLight.target.position.set(bounds.centerX, 3.5, bounds.centerZ);
+    packFillLight.target.updateMatrixWorld();
+
+    packRimLight.position.set(bounds.centerX + 12, 30, bounds.centerZ - 38);
+    packRimLight.target.position.set(bounds.centerX, 3.5, bounds.centerZ);
+    packRimLight.target.updateMatrixWorld();
 
     if (firstFinishTriggered) {
         const winner = ducks[0];
         const t = time - winnerFinishTime;
 
-        const dist = 14 + (t * 3.0);
-        const height = 5 + (t * 2.0);
-        const angle = -0.2 + (t * 0.2);
+        const dist = 15 + (t * 2.5);
+        const height = 6.5 + (t * 1.6);
+        const angle = -0.25 + (t * 0.18);
 
         target.set(
             winner.position.x + Math.sin(angle) * dist,
             height,
             winner.position.z + Math.cos(angle) * dist
         );
-        look.copy(winner.position).add(new THREE.Vector3(0, 2.5, 0));
+        look.copy(winner.position).add(new THREE.Vector3(0, 3.8, 0));
 
-    } else if (!isRacing) {
+    } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
+        // Front-facing starting grid showcase camera
         const fitDist = calcDistanceForWidth(bounds.spreadX, availableFraction);
-        target.set(bounds.centerX, Math.max(10, fitDist * 0.4), bounds.centerZ + fitDist);
-        look.set(bounds.centerX, 1.5, bounds.centerZ);
+        target.set(bounds.centerX, Math.max(9.5, fitDist * 0.34), bounds.centerZ + fitDist * 0.92);
+        look.set(bounds.centerX, 3.8, bounds.centerZ);
 
     } else {
         const distRemaining = CONFIG.raceDistance - leadDuck.position.z;
+        const fitDist = calcDistanceForWidth(bounds.spreadX, availableFraction);
 
         if (distRemaining <= 100) {
-            const fitDist = calcDistanceForWidth(bounds.spreadX, availableFraction);
-            target.set(bounds.centerX, 8, leadDuck.position.z - fitDist * 0.6);
-            look.set(bounds.centerX, 2, leadDuck.position.z + 20);
+            target.set(bounds.centerX, 9.5, leadDuck.position.z - fitDist * 0.65);
+            look.set(bounds.centerX, 3.6, leadDuck.position.z + 18);
         } else {
-            const fitDist = calcDistanceForWidth(bounds.spreadX, availableFraction);
-
             if (camAngle === 0) {
-                const camHeight = Math.max(6, fitDist * 0.25);
-                target.set(bounds.centerX, camHeight, leadDuck.position.z + fitDist);
-                look.set(bounds.centerX, 2, leadDuck.position.z);
+                const camHeight = Math.max(7.5, fitDist * 0.28);
+                target.set(bounds.centerX, camHeight, leadDuck.position.z + fitDist * 0.88);
+                look.set(bounds.centerX, 3.6, leadDuck.position.z);
             } else if (camAngle === 1) {
-                const camHeight = Math.max(10, fitDist * 0.45);
-                target.set(bounds.centerX, camHeight, bounds.centerZ + fitDist * 1.1);
-                look.set(bounds.centerX, 1.5, bounds.centerZ);
+                const camHeight = Math.max(10.5, fitDist * 0.42);
+                target.set(bounds.centerX, camHeight, bounds.centerZ + fitDist * 0.98);
+                look.set(bounds.centerX, 3.4, bounds.centerZ);
             } else {
-                const camHeight = Math.max(6, fitDist * 0.25);
-                target.set(bounds.minX - fitDist * 0.4, camHeight, leadDuck.position.z + fitDist * 0.6);
-                look.set(bounds.centerX + 5, 2, leadDuck.position.z);
+                const camHeight = Math.max(7.5, fitDist * 0.28);
+                target.set(bounds.minX - fitDist * 0.36, camHeight, leadDuck.position.z + fitDist * 0.58);
+                look.set(bounds.centerX + 4, 3.6, leadDuck.position.z);
             }
         }
     }
 
-    camera.position.lerp(target, 3.5 * delta);
-    cameraLookAt.lerp(look, 3.5 * delta);
+    camera.position.lerp(target, 3.8 * delta);
+    cameraLookAt.lerp(look, 3.8 * delta);
     camera.lookAt(cameraLookAt);
 }
 
@@ -1726,8 +1885,10 @@ function lightenColor(hex, amount) {
 }
 
 function updateUI(leadDuck, sortedDucks, time) {
-    if (isRacing && !raceEnded && speedEl) {
+    if (raceState === RACE_STATE.RACING && speedEl) {
         speedEl.innerText = Math.floor(leadDuck.baseSpeed * 2 + (Math.sin(time * 10) * 5));
+    } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
+        if (speedEl) speedEl.innerText = "0";
     }
 
     for (let i = 0; i < sortedDucks.length; i++) {
@@ -1748,6 +1909,8 @@ function updateUI(leadDuck, sortedDucks, time) {
 
         if (d.finished) {
             cache.distSpan.innerHTML = `<span style="color:#ff6d00">FINISHED</span>`;
+        } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
+            cache.distSpan.textContent = 'READY';
         } else {
             cache.distSpan.textContent = (i === 0) ? 'LEADER' : `+${Math.floor(leadDuck.position.z - d.position.z)}m`;
         }
@@ -1763,34 +1926,36 @@ function animate() {
     const time = clock.getElapsedTime();
 
     // Flickering candle effect for roadside Jack-o'-Lanterns
-    const flicker = 0.65 + Math.sin(time * 14) * 0.2 + Math.cos(time * 23) * 0.15;
+    const flicker = 0.85 + Math.sin(time * 14) * 0.2 + Math.cos(time * 23) * 0.15;
     pumpkinGlowMat.emissiveIntensity = flicker;
 
-    if (isRacing) updateFootstepMist(delta);
+    if (raceState === RACE_STATE.RACING) updateFootstepMist(delta);
     updateFireworks();
 
-    // Animate idle or racing Zoombies
+    // Update all racers according to the active raceState
     ducks.forEach(d => {
         d.update(delta, time);
-        if (isRacing && !d.finished && d.position.z >= CONFIG.raceDistance) {
+        if (raceState === RACE_STATE.RACING && !d.finished && d.position.z >= CONFIG.raceDistance) {
             d.finished = true;
             d.finishTime = time;
         }
     });
 
-    if (isRacing) {
-        // Racer collision avoidance
+    if (raceState === RACE_STATE.RACING) {
+        // Enlarged racer collision avoidance (min separation ~5.8 units)
+        const minSep = 5.8;
+        const minSepSq = minSep * minSep;
         for (let i = 0; i < ducks.length; i++) {
             for (let j = i + 1; j < ducks.length; j++) {
                 const d1 = ducks[i], d2 = ducks[j];
                 const dx = d1.position.x - d2.position.x;
                 const dz = d1.position.z - d2.position.z;
                 const distSq = dx * dx + dz * dz;
-                if (distSq < 20.0) {
+                if (distSq < minSepSq) {
                     const dist = Math.sqrt(distSq);
                     if (dist < 0.001) { d1.position.x += 0.1; continue; }
-                    const overlap = 4.5 - dist;
-                    const push = overlap * 0.55;
+                    const overlap = minSep - dist;
+                    const push = overlap * 0.52;
                     const nx = dx / dist, nz = dz / dist;
                     d1.position.x += nx * push; d1.position.z += nz * push;
                     d2.position.x -= nx * push; d2.position.z -= nz * push;
@@ -1815,8 +1980,8 @@ function animate() {
             startFireworks(leadDuck.color);
         }
 
-        if (ducks.every(d => d.finished) && !raceEnded) {
-            raceEnded = true;
+        if (ducks.every(d => d.finished) && raceState !== RACE_STATE.FINISHED) {
+            setRaceState(RACE_STATE.FINISHED);
             const trueWinner = ducks.reduce((prev, curr) => (prev.finishTime < curr.finishTime) ? prev : curr);
 
             winnerText.innerText = `WINNER: #${trueWinner.id + 1} ${trueWinner.name.toUpperCase()}!`;
@@ -1839,7 +2004,7 @@ function animate() {
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     applyViewOffset();
-    camera.fov = 50;
+    camera.fov = 46;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     resizeCanvas();

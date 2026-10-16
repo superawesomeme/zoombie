@@ -1,5 +1,4 @@
 import { spawn } from 'child_process';
-import http from 'http';
 import fs from 'fs';
 import path from 'path';
 
@@ -18,7 +17,6 @@ function delay(ms) {
 async function getPageWsUrl() {
     for (let i = 0; i < 30; i++) {
         try {
-            // Create a new page target directly
             const res = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/new?about:blank`, { method: 'PUT' });
             if (res.ok) {
                 const data = await res.json();
@@ -28,7 +26,6 @@ async function getPageWsUrl() {
         await delay(300);
     }
 
-    // Fallback: list targets
     try {
         const res = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`);
         if (res.ok) {
@@ -121,7 +118,6 @@ async function runBrowserTests() {
         const page = new PageCDP(wsUrl);
         await page.connect();
 
-        // Enable domains
         await page.send('Runtime.enable');
         await page.send('Page.enable');
         await page.send('Network.enable');
@@ -153,7 +149,6 @@ async function runBrowserTests() {
 
         await page.send('Page.navigate', { url: 'http://localhost:8000/tools/test-suite.html' });
 
-        // Wait for tests to finish
         let testResults = null;
         for (let i = 0; i < 40; i++) {
             await delay(500);
@@ -173,10 +168,10 @@ async function runBrowserTests() {
         }
 
         // ─────────────────────────────────────────────────────────────
-        // TEST 2: Load actual index.html application
+        // TEST 2: Load actual index.html & verify pre-race READY state
         // ─────────────────────────────────────────────────────────────
         console.log('\n======================================================');
-        console.log('TEST PHASE 2: Loading live application index.html...');
+        console.log('TEST PHASE 2: Loading index.html & Verifying Starting Line...');
         console.log('======================================================');
 
         consoleMessages.length = 0;
@@ -184,7 +179,6 @@ async function runBrowserTests() {
 
         await page.send('Page.navigate', { url: 'http://localhost:8000/index.html' });
 
-        // Wait for MonsterModelManager to finish preloading (start button becomes enabled)
         console.log('Waiting for racer GLB preloading to complete...');
         let ready = false;
         for (let i = 0; i < 40; i++) {
@@ -202,39 +196,61 @@ async function runBrowserTests() {
         }
         console.log('✓ Preloading complete. Start button is enabled.');
 
-        // Verify all 8 racers initialized in scene
-        const duckCount = await page.evaluate('ducks.length');
-        console.log(`✓ Racer count in scene: ${duckCount}`);
-        if (duckCount !== 8) throw new Error(`Expected 8 racers, found ${duckCount}`);
+        // Wait 1.2 seconds on the start screen to confirm racers DO NOT drift or run in place
+        await delay(1200);
 
-        // Check each racer is using GLB and has valid rig
-        const racerInfo = await page.evaluate(`
-            ducks.map(d => ({
-                id: d.id,
-                name: d.name,
-                usingGLB: d.usingGLB,
-                hasBody: !!d.rig.bodyGroup,
-                hasHead: !!d.rig.headGroup,
-                hasLeftArm: !!d.rig.leftArm,
-                hasRightArm: !!d.rig.rightArm,
-                hasLeftLeg: !!d.rig.leftLeg,
-                hasRightLeg: !!d.rig.rightLeg,
-                zombieArms: !!d.ZombieArms,
-                posY: d.mesh.position.y,
-                posZ: d.mesh.position.z
-            }))
+        const preRaceAudit = await page.evaluate(`
+            ({
+                raceState,
+                isRacing,
+                isCountingDown,
+                racerScale: CONFIG.racerScale,
+                racers: ducks.map(d => ({
+                    id: d.id,
+                    name: d.name,
+                    usingGLB: d.usingGLB,
+                    hasBody: !!d.rig.bodyGroup,
+                    hasHead: !!d.rig.headGroup,
+                    hasLeftArm: !!d.rig.leftArm,
+                    hasRightArm: !!d.rig.rightArm,
+                    hasLeftLeg: !!d.rig.leftLeg,
+                    hasRightLeg: !!d.rig.rightLeg,
+                    posX: d.position.x,
+                    posZ: d.position.z,
+                    legRotL: d.rig.leftLeg.rotation.x,
+                    legRotR: d.rig.rightLeg.rotation.x
+                }))
+            })
         `);
 
-        console.log('\nInspecting 8 Live Racers:');
-        for (const r of racerInfo) {
-            console.log(`  Racer #${r.id + 1} (${r.name}): GLB=${r.usingGLB}, Rig=[Body:${r.hasBody}, Head:${r.hasHead}, Arms:${r.hasLeftArm}/${r.hasRightArm}, Legs:${r.hasLeftLeg}/${r.hasRightLeg}], ZombieArms=${r.zombieArms}`);
+        console.log(`✓ Initial raceState: ${preRaceAudit.raceState} (scale: ${preRaceAudit.racerScale})`);
+        if (preRaceAudit.raceState !== 'READY') {
+            throw new Error(`Expected raceState READY on start screen, got ${preRaceAudit.raceState}`);
+        }
+
+        console.log('\nInspecting 8 Live Racers on Start Screen:');
+        for (let i = 0; i < preRaceAudit.racers.length; i++) {
+            const r = preRaceAudit.racers[i];
+            console.log(`  Racer #${r.id + 1} (${r.name}): GLB=${r.usingGLB}, X=${r.posX.toFixed(2)}, Z=${r.posZ.toFixed(2)}, LegRot=[${r.legRotL.toFixed(2)}, ${r.legRotR.toFixed(2)}]`);
             if (!r.usingGLB) throw new Error(`Racer #${r.id} is NOT using GLB!`);
             if (!r.hasBody || !r.hasHead || !r.hasLeftArm || !r.hasRightArm || !r.hasLeftLeg || !r.hasRightLeg) {
                 throw new Error(`Racer #${r.id} missing rig nodes!`);
             }
+            if (Math.abs(r.posZ) > 0.001) {
+                throw new Error(`Racer #${r.id} moved forward before race start (Z=${r.posZ})!`);
+            }
+            if (Math.abs(r.legRotL) > 0.001 || Math.abs(r.legRotR) > 0.001) {
+                throw new Error(`Racer #${r.id} legs are cycling before race start!`);
+            }
+            if (i > 0) {
+                const spacing = r.posX - preRaceAudit.racers[i - 1].posX;
+                if (Math.abs(spacing - 7.4) > 0.05) {
+                    throw new Error(`Uneven starting grid spacing between #${i} and #${i + 1}: ${spacing}`);
+                }
+            }
         }
+        console.log('✓ All 8 racers aligned in a straight starting line with zero pre-race running.');
 
-        // Check network errors
         if (networkErrors.length > 0) {
             console.error('Network errors detected:', networkErrors);
             throw new Error(`Encountered ${networkErrors.length} network errors (404s/500s)!`);
@@ -242,37 +258,52 @@ async function runBrowserTests() {
         console.log('✓ No 404s or network errors detected.');
 
         // ─────────────────────────────────────────────────────────────
-        // TEST 3: Click RACE! and simulate full race
+        // TEST 3: Click RACE!, verify COUNTDOWN hold, then simulate race
         // ─────────────────────────────────────────────────────────────
         console.log('\n======================================================');
-        console.log('TEST PHASE 3: Starting Race & Simulating Full Run...');
+        console.log('TEST PHASE 3: Verifying Countdown Alignment & Full Race...');
         console.log('======================================================');
 
-        // Click start button
         await page.evaluate('document.getElementById("start-btn").click()');
         console.log('Clicked RACE! button.');
 
-        // Check countdown state
-        await delay(500);
-        const isCounting = await page.evaluate('isCountingDown');
-        console.log(`✓ Countdown running: ${isCounting}`);
+        await delay(650);
+        const countdownCheck = await page.evaluate(`
+            ({
+                raceState,
+                isCountingDown,
+                isRacing,
+                maxZ: Math.max(...ducks.map(d => Math.abs(d.position.z))),
+                maxLegRot: Math.max(...ducks.map(d => Math.abs(d.rig.leftLeg.rotation.x)))
+            })
+        `);
+        console.log(`✓ Countdown state: ${countdownCheck.raceState} | maxZ=${countdownCheck.maxZ} | maxLegRot=${countdownCheck.maxLegRot}`);
+        if (countdownCheck.raceState !== 'COUNTDOWN' || !countdownCheck.isCountingDown || countdownCheck.isRacing) {
+            throw new Error(`Expected COUNTDOWN state during countdown, got ${JSON.stringify(countdownCheck)}`);
+        }
+        if (countdownCheck.maxZ > 0.001 || countdownCheck.maxLegRot > 0.001) {
+            throw new Error('Racers moved or cycled legs during countdown!');
+        }
 
-        // Fast-forward countdown and race
-        console.log('Accelerating race simulation to test finish line and victory sequence...');
+        // Fast-forward countdown into RACING state cleanly
+        console.log('Triggering horn transition to RACING and accelerating simulation...');
         await page.evaluate(`
-            isCountingDown = false;
-            isRacing = true;
-            gameSpeed = 15.0; // accelerate
+            if (countdownTimerId) {
+                clearInterval(countdownTimerId);
+                countdownTimerId = null;
+            }
+            const cd = document.getElementById('countdown-overlay');
+            if (cd) { cd.innerHTML = ''; cd.style.display = 'none'; }
+            setRaceState(RACE_STATE.RACING);
+            gameSpeed = 15.0;
         `);
 
-        // Wait for race to end
         let raceFinished = false;
         for (let i = 0; i < 40; i++) {
             await delay(500);
             const ended = await page.evaluate('raceEnded');
             const finishedCount = await page.evaluate('ducks.filter(d => d.finished).length');
             const leaderZ = await page.evaluate('ducks[0].position.z');
-            const speed = await page.evaluate('document.getElementById("speed-stat")?.innerText');
             const progress = await page.evaluate('document.getElementById("progress-fill")?.style.width');
             process.stdout.write(`\r  Progress: ${progress || '0%'} | Leader Z: ${Math.round(leaderZ)}m | Finished: ${finishedCount}/8 | Ended: ${ended}`);
 
@@ -286,38 +317,40 @@ async function runBrowserTests() {
         if (!raceFinished) {
             throw new Error('Race did not finish within timeout!');
         }
-        console.log('✓ All 8 racers crossed the finish line!');
+        console.log('✓ All 8 racers crossed the finish line and entered FINISHED state!');
 
-        // Check winner announcement
         const winnerMsg = await page.evaluate('document.getElementById("winner-text")?.innerText');
         console.log(`✓ Winner Announcement: "${winnerMsg}"`);
 
-        // Check end screen becomes visible
         await delay(2500);
         const endScreenHidden = await page.evaluate('document.getElementById("end-screen")?.classList.contains("hidden")');
         console.log(`✓ End screen visible: ${!endScreenHidden}`);
 
         // ─────────────────────────────────────────────────────────────
-        // TEST 4: Restart Race & verify model reuse / no duplicates
+        // TEST 4: Restart Race & verify reset to READY on starting line
         // ─────────────────────────────────────────────────────────────
         console.log('\n======================================================');
         console.log('TEST PHASE 4: Restarting for Next Race...');
         console.log('======================================================');
 
         await page.evaluate('document.getElementById("restart-btn").click()');
-        await delay(1000);
+        await delay(800);
 
-        const restartDuckCount = await page.evaluate('ducks.length');
-        const startScreenHiddenAfterRestart = await page.evaluate('document.getElementById("start-screen")?.classList.contains("hidden")');
-        console.log(`✓ Next race racers: ${restartDuckCount} (expected 8)`);
-        console.log(`✓ Start screen restored: ${!startScreenHiddenAfterRestart}`);
+        const restartCheck = await page.evaluate(`
+            ({
+                duckCount: ducks.length,
+                raceState,
+                startScreenVisible: !document.getElementById("start-screen")?.classList.contains("hidden"),
+                allGLB: ducks.every(d => d.usingGLB),
+                maxZ: Math.max(...ducks.map(d => Math.abs(d.position.z)))
+            })
+        `);
 
-        if (restartDuckCount !== 8) throw new Error(`Race restart created ${restartDuckCount} racers instead of 8!`);
-
-        // Verify models in next race still have GLBs intact
-        const nextRaceGLB = await page.evaluate('ducks.every(d => d.usingGLB)');
-        console.log(`✓ All racers in Race #2 use GLB models: ${nextRaceGLB}`);
-        if (!nextRaceGLB) throw new Error('Race #2 racers failed to use GLB models!');
+        console.log(`✓ Next race racers: ${restartCheck.duckCount} | state: ${restartCheck.raceState} | maxZ: ${restartCheck.maxZ}`);
+        if (restartCheck.duckCount !== 8) throw new Error(`Expected 8 racers after restart, got ${restartCheck.duckCount}`);
+        if (restartCheck.raceState !== 'READY') throw new Error(`Expected READY state after restart, got ${restartCheck.raceState}`);
+        if (restartCheck.maxZ > 0.001) throw new Error(`Racers did not reset to Z=0 after restart (maxZ=${restartCheck.maxZ})`);
+        if (!restartCheck.allGLB) throw new Error('Race #2 racers failed to use GLB models!');
 
         // ─────────────────────────────────────────────────────────────
         // TEST 5: Event Creation / Custom Race Management
@@ -334,13 +367,18 @@ async function runBrowserTests() {
         `);
         await delay(500);
 
-        const currentRaceName = await page.evaluate('storedRaces[currentRaceIndex]?.name');
-        console.log(`✓ Custom race created and selected: "${currentRaceName}"`);
-        if (currentRaceName !== 'Hallows Test GP') throw new Error(`Expected custom race, got ${currentRaceName}`);
-
-        const customRacersGLB = await page.evaluate('ducks.every(d => d.usingGLB)');
-        console.log(`✓ Custom race racers using GLB models: ${customRacersGLB}`);
-        if (!customRacersGLB) throw new Error('Custom race racers failed to use GLB models!');
+        const customCheck = await page.evaluate(`
+            ({
+                name: storedRaces[currentRaceIndex]?.name,
+                raceState,
+                allGLB: ducks.every(d => d.usingGLB),
+                maxZ: Math.max(...ducks.map(d => Math.abs(d.position.z)))
+            })
+        `);
+        console.log(`✓ Custom race created: "${customCheck.name}" | state=${customCheck.raceState} | maxZ=${customCheck.maxZ}`);
+        if (customCheck.name !== 'Hallows Test GP') throw new Error(`Expected custom race, got ${customCheck.name}`);
+        if (customCheck.raceState !== 'READY' || customCheck.maxZ > 0.001) throw new Error('Custom race did not reset cleanly to starting line!');
+        if (!customCheck.allGLB) throw new Error('Custom race racers failed to use GLB models!');
 
         console.log('\n======================================================');
         console.log('🎉 ALL AUTOMATED BROWSER TESTS PASSED PERFECTLY!');

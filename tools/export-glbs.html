@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Zoombie GLB Browser Generator (No Node Required)</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #160b2e; color: #fff; padding: 40px; max-width: 720px; margin: 0 auto; }
+        h1 { color: #ff8000; margin-bottom: 8px; }
+        p { color: #ccc; line-height: 1.5; }
+        .card { background: #231442; border: 1px solid #4a2c68; padding: 24px; border-radius: 8px; margin-top: 20px; }
+        button { background: #ff6d00; color: #08050d; border: none; padding: 14px 28px; font-size: 16px; font-weight: 800; border-radius: 6px; cursor: pointer; margin-right: 12px; }
+        button:hover { background: #76ff03; }
+        #log { margin-top: 20px; font-family: monospace; white-space: pre-wrap; background: #0d061a; padding: 16px; border-radius: 6px; border: 1px solid #3a2252; }
+        .dl-links a { display: inline-block; margin: 6px 8px 6px 0; padding: 8px 14px; background: #392359; color: #ffd180; text-decoration: none; border-radius: 4px; font-weight: 600; }
+        .dl-links a:hover { background: #ff6d00; color: #000; }
+    </style>
+</head>
+<body>
+    <h1>Zoombie 3D Monster GLB Generator</h1>
+    <p>No Node.js or command line needed! Select your updated <code>tools/generate-monsters.mjs</code> file below (or click Generate if served locally), and this page will build all 8 binary <code>.glb</code> files right in your browser.</p>
+
+    <div class="card">
+        <label style="display:block; margin-bottom:12px; font-weight:bold; color:#ffd180;">
+            Step 1: Select your updated <code>tools/generate-monsters.mjs</code> file:
+        </label>
+        <input type="file" id="mjs-file" accept=".mjs,.js" style="margin-bottom: 18px; display:block; color:#fff;">
+        <button id="gen-btn">GENERATE & DOWNLOAD ALL 8 GLBs</button>
+        <div id="links" class="dl-links" style="margin-top:16px;"></div>
+        <div id="log">Waiting for generate-monsters.mjs...</div>
+    </div>
+
+    <script>
+        // Minimal Buffer polyfill for browser so generate-monsters.mjs runs unmodified
+        class BrowserBuffer extends Uint8Array {
+            static alloc(size, fill = 0) {
+                const b = new BrowserBuffer(size);
+                if (fill !== 0) b.fill(fill);
+                return b;
+            }
+            static allocUnsafe(size) {
+                return new BrowserBuffer(size);
+            }
+            static from(str) {
+                const enc = new TextEncoder().encode(str);
+                const b = new BrowserBuffer(enc.length);
+                b.set(enc);
+                return b;
+            }
+            static concat(list) {
+                const total = list.reduce((acc, cur) => acc + cur.length, 0);
+                const out = new BrowserBuffer(total);
+                let offset = 0;
+                for (const item of list) {
+                    out.set(item, offset);
+                    offset += item.length;
+                }
+                return out;
+            }
+            writeFloatLE(val, offset) {
+                new DataView(this.buffer, this.byteOffset, this.byteLength).setFloat32(offset, val, true);
+            }
+            writeUInt16LE(val, offset) {
+                new DataView(this.buffer, this.byteOffset, this.byteLength).setUint16(offset, val, true);
+            }
+            writeUInt32LE(val, offset) {
+                new DataView(this.buffer, this.byteOffset, this.byteLength).setUint32(offset, val, true);
+            }
+        }
+        window.Buffer = BrowserBuffer;
+
+        const logEl = document.getElementById('log');
+        const linksEl = document.getElementById('links');
+
+        function log(msg) {
+            logEl.textContent += msg + '\n';
+        }
+
+        async function runGeneratorSource(src) {
+            logEl.textContent = '';
+            linksEl.innerHTML = '';
+
+            // Strip Node-only imports and filesystem calls, hook writeFileSync to browser downloads
+            const cleaned = src
+                .replace(/import\s+.*?from\s+['"].*?['"];?/g, '')
+                .replace(/const\s+__dirname\s*=.*?;?/g, 'const __dirname = "";')
+                .replace(/const\s+OUT_DIR\s*=.*?;?/g, 'const OUT_DIR = "models";')
+                .replace(/mkdirSync\(.*?\);?/g, '');
+
+            const generatedFiles = [];
+            const resolve = (dir, file) => file;
+            const writeFileSync = (filename, buf) => {
+                const blob = new Blob([buf], { type: 'model/gltf-binary' });
+                const url = URL.createObjectURL(blob);
+                generatedFiles.push({ filename, url, sizeKB: (buf.length / 1024).toFixed(1) });
+            };
+            const processShim = { stdout: { write: (s) => { logEl.textContent += s; } } };
+
+            const runner = new Function('Buffer', 'resolve', 'writeFileSync', 'process', cleaned);
+            runner(BrowserBuffer, resolve, writeFileSync, processShim);
+
+            log('\n✅ All 8 GLBs built in browser! Click any link below or watch automatic downloads:');
+            generatedFiles.forEach((f, idx) => {
+                const a = document.createElement('a');
+                a.href = f.url;
+                a.download = f.filename;
+                a.textContent = `⬇ ${f.filename} (${f.sizeKB} KB)`;
+                linksEl.appendChild(a);
+                setTimeout(() => a.click(), idx * 250);
+            });
+        }
+
+        document.getElementById('gen-btn').addEventListener('click', async () => {
+            const fileInput = document.getElementById('mjs-file');
+            if (fileInput.files && fileInput.files[0]) {
+                const text = await fileInput.files[0].text();
+                await runGeneratorSource(text);
+            } else {
+                try {
+                    const res = await fetch('./generate-monsters.mjs');
+                    if (!res.ok) throw new Error('Please choose tools/generate-monsters.mjs using the file picker above.');
+                    const text = await res.text();
+                    await runGeneratorSource(text);
+                } catch (e) {
+                    log('❌ ' + e.message);
+                }
+            }
+        });
+    </script>
+</body>
+</html>

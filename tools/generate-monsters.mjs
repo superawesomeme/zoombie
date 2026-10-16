@@ -1,19 +1,11 @@
 /**
- * Zoombie Racing Simulator – Monster GLB Generator
- * ================================================
- * Produces 8 GLB files in ../models/ using pure Node.js.
- * No npm packages required. No Blender required.
+ * Zoombie Racing Simulator – Monster GLB Generator (v2 Cartoon Platformer Edition)
+ * ================================================================================
+ * Produces 8 bright, comical, family-friendly 3D cartoon monster GLB files in ../models/
+ * using pure Node.js (zero external npm dependencies).
  *
  * Run with:
- *   node generate-monsters.mjs
- * (using the Adobe-bundled node.exe or any Node ≥ 18)
- *
- * Each GLB contains:
- *   - Polished, rounded stylised monster geometry
- *   - Named nodes: Root, Body, Head, Arm_L, Arm_R, Leg_L, Leg_R, Extra
- *   - PBR materials with per-character colour accents
- *   - Shadows-compatible geometry (no camera/light nodes)
- *   - Origin at ground level, facing +Z
+ *   node tools/generate-monsters.mjs
  */
 
 import { writeFileSync, mkdirSync } from 'fs';
@@ -24,22 +16,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = resolve(__dirname, '../models');
 mkdirSync(OUT_DIR, { recursive: true });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SEEDED RNG  (deterministic output)
-// ─────────────────────────────────────────────────────────────────────────────
-class SeededRng {
-    constructor(seed = 42) { this.s = seed >>> 0; }
-    next() {
-        this.s ^= this.s << 13; this.s ^= this.s >>> 17; this.s ^= this.s << 5;
-        return (this.s >>> 0) / 4294967296;
-    }
-    range(a, b) { return a + this.next() * (b - a); }
-}
-const rng = new SeededRng(0xBEEFCAFE);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MATHS HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
 const PI = Math.PI;
 const cos = Math.cos, sin = Math.sin, sqrt = Math.sqrt;
 
@@ -49,11 +25,10 @@ function norm3(x, y, z) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GEOMETRY BUILDERS  (return { positions, normals, indices, uvs })
+// GEOMETRY BUILDERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Sphere centered at origin, radius r */
-function buildSphere(r, latSegs = 14, lonSegs = 14) {
+function buildSphere(r, latSegs = 16, lonSegs = 16) {
     const positions = [], normals = [], uvs = [], indices = [];
     for (let lat = 0; lat <= latSegs; lat++) {
         const theta = lat * PI / latSegs;
@@ -76,8 +51,7 @@ function buildSphere(r, latSegs = 14, lonSegs = 14) {
     return { positions, normals, indices, uvs };
 }
 
-/** Ellipsoid via scaled sphere */
-function buildEllipsoid(rx, ry, rz, latSegs = 14, lonSegs = 14) {
+function buildEllipsoid(rx, ry, rz, latSegs = 16, lonSegs = 16) {
     const g = buildSphere(1, latSegs, lonSegs);
     const positions = [], normals = [];
     for (let i = 0; i < g.positions.length; i += 3) {
@@ -89,20 +63,41 @@ function buildEllipsoid(rx, ry, rz, latSegs = 14, lonSegs = 14) {
     return { positions, normals, indices: g.indices, uvs: g.uvs };
 }
 
-/** Rounded box (uses sphere mapping onto cube-ish shape) */
-function buildRoundedBox(w, h, d, r = 0.15, segs = 10) {
-    // Approximate with ellipsoid + slight exaggeration on corners
-    return buildEllipsoid(w * 0.5, h * 0.5, d * 0.5, segs, segs);
+/** Superellipsoid (rounded box/squircle) for soft cartoon forms */
+function buildRoundedForm(rx, ry, rz, power = 0.65, latSegs = 16, lonSegs = 16) {
+    const positions = [], normals = [], uvs = [], indices = [];
+    const spow = (v, p) => Math.sign(v) * Math.pow(Math.abs(v), p);
+    for (let lat = 0; lat <= latSegs; lat++) {
+        const theta = (lat * PI / latSegs) - PI / 2;
+        const ct = cos(theta), st = sin(theta);
+        for (let lon = 0; lon <= lonSegs; lon++) {
+            const phi = (lon * 2 * PI / lonSegs) - PI;
+            const cp = cos(phi), sp = sin(phi);
+            const x = rx * spow(ct, power) * spow(cp, power);
+            const y = ry * spow(st, power);
+            const z = rz * spow(ct, power) * spow(sp, power);
+            positions.push(x, y, z);
+            const [nx, ny, nz] = norm3(x / (rx * rx), y / (ry * ry), z / (rz * rz));
+            normals.push(nx, ny, nz);
+            uvs.push(lon / lonSegs, lat / latSegs);
+        }
+    }
+    for (let lat = 0; lat < latSegs; lat++) {
+        for (let lon = 0; lon < lonSegs; lon++) {
+            const a = lat * (lonSegs + 1) + lon;
+            const b = a + lonSegs + 1;
+            indices.push(a, b, a + 1, b, b + 1, a + 1);
+        }
+    }
+    return { positions, normals, indices, uvs };
 }
 
-/** Open or closed cylinder (y-axis, bottom at 0, top at height) */
-function buildCylinder(rBot, rTop, height, radSegs = 12, openEnded = false) {
+function buildCylinder(rBot, rTop, height, radSegs = 14, openEnded = false) {
     const positions = [], normals = [], uvs = [], indices = [];
-    const slope = (rBot - rTop) / height;
+    const slope = (rBot - rTop) / (height || 1);
     const nY = slope / sqrt(1 + slope * slope);
     const nR = 1 / sqrt(1 + slope * slope);
 
-    // Side verts
     for (let y = 0; y <= 1; y++) {
         const py = y * height;
         const r = y === 0 ? rBot : rTop;
@@ -114,15 +109,12 @@ function buildCylinder(rBot, rTop, height, radSegs = 12, openEnded = false) {
             uvs.push(i / radSegs, y);
         }
     }
-    // Side indices
     for (let i = 0; i < radSegs; i++) {
         const a = i, b = i + radSegs + 1;
         indices.push(a, b + 1, a + 1, a, b, b + 1);
     }
-    const sideVerts = positions.length / 3;
 
     if (!openEnded) {
-        // Bottom cap
         const bCenter = positions.length / 3;
         positions.push(0, 0, 0); normals.push(0, -1, 0); uvs.push(0.5, 0.5);
         for (let i = 0; i <= radSegs; i++) {
@@ -134,7 +126,6 @@ function buildCylinder(rBot, rTop, height, radSegs = 12, openEnded = false) {
             indices.push(bCenter, bCenter + i + 2, bCenter + i + 1);
         }
 
-        // Top cap
         const tCenter = positions.length / 3;
         positions.push(0, height, 0); normals.push(0, 1, 0); uvs.push(0.5, 0.5);
         for (let i = 0; i <= radSegs; i++) {
@@ -149,46 +140,24 @@ function buildCylinder(rBot, rTop, height, radSegs = 12, openEnded = false) {
     return { positions, normals, indices, uvs };
 }
 
-/** Cone */
-function buildCone(r, height, radSegs = 10) {
-    return buildCylinder(r, 0.001, height, radSegs);
+function buildCone(r, height, radSegs = 12) {
+    return buildCylinder(r, 0.01, height, radSegs);
 }
 
-/** Torus segment for curved shapes like ribcage ribs */
-function buildTorus(R, r, tubeSegs = 16, ringSegs = 8, arcFraction = 1) {
-    const positions = [], normals = [], uvs = [], indices = [];
-    for (let j = 0; j <= ringSegs; j++) {
-        const theta = j * PI * arcFraction / ringSegs;
-        const cx = cos(theta) * R, cy = sin(theta) * R;
-        for (let i = 0; i <= tubeSegs; i++) {
-            const phi = i * 2 * PI / tubeSegs;
-            const rx = cos(phi) * r, ry = sin(phi) * r;
-            // point on torus
-            const px = (R + rx * cos(theta)), py = ry, pz = rx * sin(theta) * (arcFraction < 1 ? -1 : 1);
-            const nx = cos(phi) * cos(theta), ny = sin(phi), nz = cos(phi) * sin(theta);
-            positions.push(px, py, pz);
-            normals.push(...norm3(nx, ny, nz));
-            uvs.push(i / tubeSegs, j / ringSegs);
-        }
-    }
-    for (let j = 0; j < ringSegs; j++) {
-        for (let i = 0; i < tubeSegs; i++) {
-            const a = j * (tubeSegs + 1) + i;
-            const b = a + tubeSegs + 1;
-            indices.push(a, b, a + 1, b, b + 1, a + 1);
-        }
-    }
-    return { positions, normals, indices, uvs };
-}
-
-/** Flat quad (used for cape/spectral veil – double sided via two triangles per face) */
-function buildPlane(w, h, wSegs = 4, hSegs = 6) {
+/** Curved Dish / Cape / Bandage Strip with subtle curvature */
+function buildCurvedCape(wTop, wBot, height, curveZ = -0.25, wSegs = 6, hSegs = 8) {
     const positions = [], normals = [], uvs = [], indices = [];
     for (let iy = 0; iy <= hSegs; iy++) {
+        const v = iy / hSegs;
+        const w = wTop + (wBot - wTop) * v;
+        const y = -v * height;
         for (let ix = 0; ix <= wSegs; ix++) {
-            const u = ix / wSegs, v = iy / hSegs;
-            positions.push((u - 0.5) * w, (v - 0.5) * h, 0);
-            normals.push(0, 0, 1);
+            const u = ix / wSegs;
+            const nx = (u - 0.5) * 2;
+            const x = (u - 0.5) * w;
+            const z = (1 - nx * nx) * curveZ * (0.4 + 0.6 * v) - v * v * 0.25;
+            positions.push(x, y, z);
+            normals.push(0, 0.15, 0.98);
             uvs.push(u, v);
         }
     }
@@ -196,9 +165,7 @@ function buildPlane(w, h, wSegs = 4, hSegs = 6) {
         for (let ix = 0; ix < wSegs; ix++) {
             const a = iy * (wSegs + 1) + ix;
             const b = a + wSegs + 1;
-            // front face
             indices.push(a, b, a + 1, b, b + 1, a + 1);
-            // back face (reverse winding)
             indices.push(a + 1, b, a, a + 1, b + 1, b);
         }
     }
@@ -213,23 +180,6 @@ function translateGeo(geo, tx, ty, tz) {
         geo.positions[i] += tx;
         geo.positions[i + 1] += ty;
         geo.positions[i + 2] += tz;
-    }
-    return geo;
-}
-
-function scaleGeo(geo, sx, sy, sz) {
-    sz = sz ?? sy ?? sx;
-    sy = sy ?? sx;
-    for (let i = 0; i < geo.positions.length; i += 3) {
-        geo.positions[i] *= sx;
-        geo.positions[i + 1] *= sy;
-        geo.positions[i + 2] *= sz;
-    }
-    // Scale normals (non-uniform => need inverse transpose)
-    for (let i = 0; i < geo.normals.length; i += 3) {
-        const nx = geo.normals[i] / sx, ny = geo.normals[i + 1] / sy, nz = geo.normals[i + 2] / sz;
-        const [nnx, nny, nnz] = norm3(nx, ny, nz);
-        geo.normals[i] = nnx; geo.normals[i + 1] = nny; geo.normals[i + 2] = nnz;
     }
     return geo;
 }
@@ -279,7 +229,6 @@ function rotateGeoZ(geo, angle) {
     return geo;
 }
 
-/** Merge multiple geometries into one (re-indexing) */
 function mergeGeos(...geos) {
     const out = { positions: [], normals: [], uvs: [], indices: [] };
     let offset = 0;
@@ -295,53 +244,114 @@ function mergeGeos(...geos) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GLTF / GLB BINARY ENCODER
+// CARTOON LIMB & FEATURE HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Encode a Float32 array into a Buffer */
+/** Expressive cartoon eyes with big white sclera, colored iris/glow and dark pupil */
+function buildCartoonEyes(sepX, y, z, rx = 0.24, ry = 0.28, browTilt = 0.22) {
+    const scleraL = translateGeo(buildEllipsoid(rx, ry, 0.14, 12, 12), -sepX, y, z);
+    const scleraR = translateGeo(buildEllipsoid(rx, ry, 0.14, 12, 12), sepX, y, z);
+
+    const pupilL = translateGeo(buildEllipsoid(rx * 0.52, ry * 0.55, 0.09, 10, 10), -sepX * 0.94, y, z + 0.11);
+    const pupilR = translateGeo(buildEllipsoid(rx * 0.52, ry * 0.55, 0.09, 10, 10), sepX * 0.94, y, z + 0.11);
+
+    const shineL = translateGeo(buildEllipsoid(rx * 0.20, ry * 0.20, 0.06, 6, 6), -sepX * 0.88 + 0.05, y + 0.07, z + 0.16);
+    const shineR = translateGeo(buildEllipsoid(rx * 0.20, ry * 0.20, 0.06, 6, 6), sepX * 0.88 + 0.05, y + 0.07, z + 0.16);
+
+    const browL = buildEllipsoid(rx * 1.35, 0.09, 0.14, 8, 8);
+    rotateGeoZ(browL, -browTilt);
+    translateGeo(browL, -sepX, y + ry + 0.08, z + 0.06);
+
+    const browR = buildEllipsoid(rx * 1.35, 0.09, 0.14, 8, 8);
+    rotateGeoZ(browR, browTilt);
+    translateGeo(browR, sepX, y + ry + 0.08, z + 0.06);
+
+    return {
+        sclera: mergeGeos(scleraL, scleraR, shineL, shineR),
+        pupils: mergeGeos(pupilL, pupilR),
+        brows: mergeGeos(browL, browR)
+    };
+}
+
+/** Cartoon arm with chunky rounded sleeve/forearm and oversized mitten hand */
+function makeCartoonArm(len = 1.45, rUpper = 0.27, rLower = 0.23, handScale = 1.0) {
+    const shoulder = buildEllipsoid(rUpper * 1.15, rUpper * 1.15, rUpper * 1.15, 10, 10);
+    const upper = buildCylinder(rLower, rUpper, len * 0.52, 10);
+    translateGeo(upper, 0, -len * 0.52, 0);
+    const elbow = buildEllipsoid(rLower * 1.05, rLower * 1.05, rLower * 1.05, 8, 8);
+    translateGeo(elbow, 0, -len * 0.52, 0);
+    const lower = buildCylinder(rLower * 0.95, rLower, len * 0.48, 10);
+    translateGeo(lower, 0, -len, 0);
+
+    const palm = buildEllipsoid(0.32 * handScale, 0.30 * handScale, 0.26 * handScale, 10, 10);
+    translateGeo(palm, 0, -len - 0.12 * handScale, 0.04);
+    const thumb = buildEllipsoid(0.14 * handScale, 0.18 * handScale, 0.14 * handScale, 8, 8);
+    rotateGeoZ(thumb, 0.5);
+    translateGeo(thumb, 0.24 * handScale, -len - 0.06 * handScale, 0.14);
+
+    return {
+        sleeve: mergeGeos(shoulder, upper, elbow, lower),
+        hand: mergeGeos(palm, thumb)
+    };
+}
+
+/** Cartoon leg with chunky trousers and oversized platformer shoe (bottom at -len) */
+function makeCartoonLeg(len = 1.55, rThigh = 0.32, rCalf = 0.25, shoeScale = 1.0) {
+    const hip = buildEllipsoid(rThigh, rThigh, rThigh, 8, 8);
+    const thigh = buildCylinder(rCalf, rThigh, len * 0.52, 10);
+    translateGeo(thigh, 0, -len * 0.52, 0);
+    const calf = buildCylinder(rCalf * 0.88, rCalf, len * 0.36, 10);
+    translateGeo(calf, 0, -len * 0.88, 0);
+
+    // Oversized rounded platformer boot/shoe resting cleanly at y = -len
+    const shoeRear = buildEllipsoid(0.32 * shoeScale, 0.24 * shoeScale, 0.32 * shoeScale, 10, 10);
+    translateGeo(shoeRear, 0, -len + 0.22 * shoeScale, 0.02);
+    const shoeToe = buildEllipsoid(0.36 * shoeScale, 0.25 * shoeScale, 0.44 * shoeScale, 12, 12);
+    translateGeo(shoeToe, 0, -len + 0.22 * shoeScale, 0.28 * shoeScale);
+    const sole = buildCylinder(0.36 * shoeScale, 0.36 * shoeScale, 0.08 * shoeScale, 12);
+    scaleGeoZ(sole, 1.45);
+    translateGeo(sole, 0, -len, 0.16 * shoeScale);
+
+    return {
+        leg: mergeGeos(hip, thigh, calf),
+        shoe: mergeGeos(shoeRear, shoeToe, sole)
+    };
+}
+
+function scaleGeoZ(geo, sz) {
+    for (let i = 0; i < geo.positions.length; i += 3) {
+        geo.positions[i + 2] *= sz;
+    }
+    return geo;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GLB BINARY ENCODER
+// ─────────────────────────────────────────────────────────────────────────────
 function f32buf(arr) {
     const b = Buffer.allocUnsafe(arr.length * 4);
     for (let i = 0; i < arr.length; i++) b.writeFloatLE(arr[i], i * 4);
     return b;
 }
-
-/** Encode a Uint16 index array into a Buffer */
 function u16buf(arr) {
     const b = Buffer.allocUnsafe(arr.length * 2);
     for (let i = 0; i < arr.length; i++) b.writeUInt16LE(arr[i], i * 2);
     return b;
 }
-
-/** Encode a Uint32 index array (for large meshes > 65535 verts) */
 function u32buf(arr) {
     const b = Buffer.allocUnsafe(arr.length * 4);
     for (let i = 0; i < arr.length; i++) b.writeUInt32LE(arr[i], i * 4);
     return b;
 }
-
-/** Pad buffer to 4-byte boundary */
 function pad4(buf) {
     const rem = buf.length % 4;
     if (rem === 0) return buf;
     return Buffer.concat([buf, Buffer.alloc(4 - rem, 0x20)]);
 }
 
-/**
- * Build a complete GLB binary from a scene description.
- *
- * sceneDesc: {
- *   materials: [{ name, baseColorFactor:[r,g,b,a], roughness, metalness, emissiveFactor:[r,g,b] }],
- *   nodes: [{ name, translation?, rotation?, scale?, children?[], meshes?:[{ geo, materialIndex }] }]
- * }
- */
 function buildGLB(sceneDesc) {
     const { materials, nodes } = sceneDesc;
-
-    // ── 1. Build binary buffer data (BIN chunk)
-    const bufferViews = [];
-    const accessors = [];
-    const meshDefs = [];
-    const binaryParts = [];
+    const bufferViews = [], accessors = [], binaryParts = [];
     let byteOffset = 0;
 
     function addAccessor(data, compType, type, target) {
@@ -363,7 +373,6 @@ function buildGLB(sceneDesc) {
         const compCount = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 }[type];
         const count = data.length / compCount;
 
-        // compute min/max for positions (required by spec)
         let min, max;
         if (type === 'VEC3' && target !== 34963) {
             min = [Infinity, Infinity, Infinity];
@@ -382,7 +391,6 @@ function buildGLB(sceneDesc) {
         return accessors.length - 1;
     }
 
-    // Build mesh accessors for each node's geometry
     function buildMeshForNode(meshItems) {
         const primitives = [];
         for (const { geo, materialIndex } of meshItems) {
@@ -401,21 +409,17 @@ function buildGLB(sceneDesc) {
         return primitives.length ? { primitives } : null;
     }
 
-    // ── 2. Flatten node hierarchy into a list, assigning indices depth-first
-    const gltfNodes = [];
-    const gltfMeshes = [];
+    const gltfNodes = [], gltfMeshes = [];
 
     function collectNode(nodeDef) {
-        // Reserve our index first
         const myIdx = gltfNodes.length;
-        gltfNodes.push(null); // placeholder filled below
+        gltfNodes.push(null);
 
         const gltfNode = { name: nodeDef.name };
         if (nodeDef.translation) gltfNode.translation = nodeDef.translation;
         if (nodeDef.rotation)    gltfNode.rotation    = nodeDef.rotation;
         if (nodeDef.scale)       gltfNode.scale        = nodeDef.scale;
 
-        // Attach mesh if this node has geometry
         if (nodeDef.meshes && nodeDef.meshes.length > 0) {
             const mesh = buildMeshForNode(nodeDef.meshes);
             if (mesh) {
@@ -424,13 +428,12 @@ function buildGLB(sceneDesc) {
             }
         }
 
-        // Recursively collect children and record their correct indices
         if (nodeDef.children && nodeDef.children.length > 0) {
             gltfNode.children = [];
             for (const childDef of nodeDef.children) {
-                const childIdx = gltfNodes.length; // will be next after current stack
+                const childIdx = gltfNodes.length;
                 gltfNode.children.push(childIdx);
-                collectNode(childDef); // fills gltfNodes[childIdx] and descendants
+                collectNode(childDef);
             }
         }
 
@@ -438,14 +441,11 @@ function buildGLB(sceneDesc) {
         return myIdx;
     }
 
-
-    // Process top-level nodes
     const rootIndices = [];
     for (const nodeDef of nodes) {
         rootIndices.push(collectNode(nodeDef));
     }
 
-    // ── 3. Build GLTF JSON
     const binBuffer = binaryParts.length ? Buffer.concat(binaryParts) : Buffer.alloc(4);
 
     const gltfMaterials = materials.map(m => {
@@ -454,7 +454,7 @@ function buildGLB(sceneDesc) {
             pbrMetallicRoughness: {
                 baseColorFactor: m.baseColorFactor || [1, 1, 1, 1],
                 metallicFactor: m.metalness ?? 0.0,
-                roughnessFactor: m.roughness ?? 0.7
+                roughnessFactor: m.roughness ?? 0.55
             },
             doubleSided: m.doubleSided ?? false
         };
@@ -463,13 +463,12 @@ function buildGLB(sceneDesc) {
         }
         if (m.alphaMode) {
             mat.alphaMode = m.alphaMode;
-            if (m.alphaMode === 'BLEND') mat.alphaCutoff = undefined;
         }
         return mat;
     });
 
     const gltfJson = {
-        asset: { version: '2.0', generator: 'ZoombieGLBGenerator/1.0' },
+        asset: { version: '2.0', generator: 'ZoombieGLBGenerator/2.0' },
         scene: 0,
         scenes: [{ name: 'Scene', nodes: rootIndices }],
         nodes: gltfNodes,
@@ -480,1152 +479,905 @@ function buildGLB(sceneDesc) {
         buffers: [{ byteLength: binBuffer.length }]
     };
 
-    const jsonStr = JSON.stringify(gltfJson);
-    const jsonBuf = pad4(Buffer.from(jsonStr, 'utf8'));
+    const jsonBuf = pad4(Buffer.from(JSON.stringify(gltfJson), 'utf8'));
     const binBuf = pad4(binBuffer);
-
     const totalLen = 12 + 8 + jsonBuf.length + 8 + binBuf.length;
 
     const header = Buffer.allocUnsafe(12);
-    header.writeUInt32LE(0x46546C67, 0); // magic 'glTF'
-    header.writeUInt32LE(2, 4);           // version
+    header.writeUInt32LE(0x46546C67, 0);
+    header.writeUInt32LE(2, 4);
     header.writeUInt32LE(totalLen, 8);
 
     const jsonChunkHeader = Buffer.allocUnsafe(8);
     jsonChunkHeader.writeUInt32LE(jsonBuf.length, 0);
-    jsonChunkHeader.writeUInt32LE(0x4E4F534A, 4); // 'JSON'
+    jsonChunkHeader.writeUInt32LE(0x4E4F534A, 4);
 
     const binChunkHeader = Buffer.allocUnsafe(8);
     binChunkHeader.writeUInt32LE(binBuf.length, 0);
-    binChunkHeader.writeUInt32LE(0x004E4942, 4); // 'BIN\0'
+    binChunkHeader.writeUInt32LE(0x004E4942, 4);
 
     return Buffer.concat([header, jsonChunkHeader, jsonBuf, binChunkHeader, binBuf]);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// COLOUR HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
 function hex2rgba(hex, a = 1) {
     return [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255, a];
 }
-function lerpColor(c1, c2, t) {
-    return c1.map((v, i) => v + (c2[i] - v) * t);
-}
-
-// Race colours matching COLORS in script.js
-const RACE_COLORS = [
-    0xF42941, // 0 Red    – Vampire
-    0xE9862A, // 1 Orange – Pumpkin Fiend
-    0xF0F136, // 2 Yellow – Cursed Mummy
-    0x50C878, // 3 Green  – Franken-Zombie
-    0x0033FF, // 4 Blue   – Spectral Banshee
-    0x6A2FA0, // 5 Purple – Witch-Imp
-    0x37474F, // 6 Grey   – Werewolf
-    0xF3F5F7  // 7 White  – Skeleton
-];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SHARED MATERIAL PALETTES
+// 8 STYLIZED CARTOON MONSTER BUILDERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-// material index constants (per-monster)
-const M_PRIMARY   = 0;
-const M_DARK      = 1;
-const M_SKIN      = 2;
-const M_GLOW      = 3;
-const M_ACCENT    = 4;
-
-function baseMaterials(hexColor) {
-    const primary = hex2rgba(hexColor);
-    return [
-        { name: 'Primary',   baseColorFactor: primary,                    roughness: 0.55, metalness: 0.05 },
-        { name: 'Dark',      baseColorFactor: [0.07, 0.05, 0.12, 1],      roughness: 0.75, metalness: 0.0  },
-        { name: 'Skin',      baseColorFactor: [0.84, 0.75, 0.62, 1],      roughness: 0.65, metalness: 0.0  },
-        { name: 'Glow',      baseColorFactor: [0.1,  0.9,  0.1,  1],      roughness: 0.3,  metalness: 0.0, emissiveFactor: [0, 0.6, 0]   },
-        { name: 'Accent',    baseColorFactor: [0.8,  0.8,  0.8,  1],      roughness: 0.4,  metalness: 0.6  }
+// 0. VAMPIRE (Red #F42941)
+function buildVampire() {
+    const mats = [
+        { name: 'CrimsonVest', baseColorFactor: hex2rgba(0xF42941), roughness: 0.45, metalness: 0.05, emissiveFactor: [0.12, 0.01, 0.02] }, // 0
+        { name: 'PlumSuit',    baseColorFactor: hex2rgba(0x2A1B4E), roughness: 0.55, metalness: 0.05 }, // 1
+        { name: 'PaleSkin',    baseColorFactor: hex2rgba(0xF5EEFF), roughness: 0.50, metalness: 0.0, emissiveFactor: [0.06, 0.05, 0.08] }, // 2
+        { name: 'HairDark',    baseColorFactor: hex2rgba(0x160D29), roughness: 0.40, metalness: 0.1 }, // 3
+        { name: 'WhiteEye',    baseColorFactor: [1.0, 1.0, 1.0, 1], roughness: 0.20, metalness: 0.0, emissiveFactor: [0.15, 0.15, 0.15] }, // 4
+        { name: 'RedPupil',    baseColorFactor: hex2rgba(0xFF1744), roughness: 0.20, metalness: 0.0, emissiveFactor: [0.55, 0.02, 0.08] }, // 5
+        { name: 'GoldMedallion', baseColorFactor: hex2rgba(0xFFD54F), roughness: 0.30, metalness: 0.6, emissiveFactor: [0.15, 0.10, 0.0] }, // 6
+        { name: 'CapeRed',     baseColorFactor: hex2rgba(0xFF1E38), roughness: 0.50, metalness: 0.05, doubleSided: true, emissiveFactor: [0.15, 0.01, 0.02] } // 7
     ];
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SHARED RIG NODE BUILDER HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
+    // Oversized expressive head
+    const headMain = buildEllipsoid(1.12, 1.18, 1.05, 18, 18);
+    const cheekL = translateGeo(buildEllipsoid(0.45, 0.38, 0.42, 10, 10), -0.68, -0.22, 0.45);
+    const cheekR = translateGeo(buildEllipsoid(0.45, 0.38, 0.42, 10, 10), 0.68, -0.22, 0.45);
+    const chin = translateGeo(buildEllipsoid(0.52, 0.35, 0.52, 10, 10), 0, -0.88, 0.22);
+    const earL = translateGeo(rotateGeoZ(buildCone(0.28, 0.75, 8), 1.15), -1.05, 0.05, 0);
+    const earR = translateGeo(rotateGeoZ(buildCone(0.28, 0.75, 8), -1.15), 1.05, 0.05, 0);
+    const skinGeo = mergeGeos(headMain, cheekL, cheekR, chin, earL, earR);
 
-/** Pivot-based limb: geometry baked with pivot at top (shoulder/hip) */
-function limbNode(name, geos, matIdx, tx, ty, tz) {
-    return {
-        name,
-        translation: [tx, ty, tz],
-        meshes: geos.map(g => ({ geo: g, materialIndex: matIdx }))
-    };
-}
+    // Swept hair with dramatic widow's peak
+    const hairTop = translateGeo(buildEllipsoid(1.16, 0.62, 1.10, 14, 14), 0, 0.76, -0.06);
+    const widowPeak = translateGeo(rotateGeoX(buildCone(0.42, 0.65, 8), PI * 0.82), 0, 0.75, 0.92);
+    const hairSweepL = translateGeo(rotateGeoZ(buildCone(0.45, 0.85, 8), 0.65), -0.85, 0.95, -0.2);
+    const hairSweepR = translateGeo(rotateGeoZ(buildCone(0.45, 0.85, 8), -0.65), 0.85, 0.95, -0.2);
+    const eyes = buildCartoonEyes(0.42, 0.12, 0.96, 0.28, 0.32, 0.28);
+    const hairAndBrows = mergeGeos(hairTop, widowPeak, hairSweepL, hairSweepR, eyes.brows);
 
-/**
- * A standard bipedal body structure used by most monsters.
- * Returns an array of child nodes for the Root node.
- *
- * Callers supply:
- *   bodyGeos   – merged geometry for Body node
- *   headGeos   – merged geometry for Head node
- *   armLGeo    – single geo for Arm_L (pivot at top)
- *   armRGeo    – single geo for Arm_R (pivot at top)
- *   legLGeo    – single geo for Leg_L (pivot at top)
- *   legRGeo    – single geo for Leg_R (pivot at top)
- *   extraGeos  – optional extra node geos (cape, hat, tail, etc.)
- *   mats       – material overrides { body, head, armL, armR, legL, legR, extra }
- */
-function buildRig({ bodyGeos, headGeos, armLGeo, armRGeo, legLGeo, legRGeo, extraGeos,
-                    mats = {} }) {
-    const m = {
-        body: mats.body ?? M_PRIMARY,
-        head: mats.head ?? M_PRIMARY,
-        armL: mats.armL ?? M_PRIMARY,
-        armR: mats.armR ?? M_PRIMARY,
-        legL: mats.legL ?? M_DARK,
-        legR: mats.legR ?? M_DARK,
-        extra: mats.extra ?? M_PRIMARY,
-    };
+    // Friendly big fangs & grin
+    const mouth = translateGeo(buildEllipsoid(0.46, 0.16, 0.14, 10, 8), 0, -0.46, 0.95);
+    const fangL = translateGeo(rotateGeoX(buildCone(0.11, 0.36, 8), PI), -0.24, -0.44, 1.02);
+    const fangR = translateGeo(rotateGeoX(buildCone(0.11, 0.36, 8), PI), 0.24, -0.44, 1.02);
+    const whiteGeo = mergeGeos(eyes.sclera, fangL, fangR);
 
-    const nodes = [
+    // Dramatic high flared collar
+    const collarBack = translateGeo(rotateGeoX(buildCylinder(0.85, 1.45, 0.95, 14, true), -0.22), 0, -0.45, -0.25);
+
+    // Compact torso with bright red waistcoat & gold medallion
+    const torsoSuit = translateGeo(buildEllipsoid(0.98, 1.08, 0.76, 14, 14), 0, 0.88, 0);
+    const vest = translateGeo(buildEllipsoid(0.86, 0.96, 0.78, 14, 14), 0, 0.86, 0.08);
+    const bowtieL = translateGeo(rotateGeoZ(buildCone(0.22, 0.42, 8), PI / 2), -0.18, 1.68, 0.68);
+    const bowtieR = translateGeo(rotateGeoZ(buildCone(0.22, 0.42, 8), -PI / 2), 0.18, 1.68, 0.68);
+    const medallion = translateGeo(buildEllipsoid(0.22, 0.22, 0.10, 10, 10), 0, 1.45, 0.74);
+
+    // Flowing red-lined cape
+    const cape = buildCurvedCape(1.5, 2.5, 2.35, -0.35, 6, 8);
+
+    const armL = makeCartoonArm(1.42, 0.28, 0.24, 1.05);
+    const armR = makeCartoonArm(1.42, 0.28, 0.24, 1.05);
+    const legL = makeCartoonLeg(1.55, 0.32, 0.24, 1.05);
+    const legR = makeCartoonLeg(1.55, 0.32, 0.24, 1.05);
+
+    const children = [
         {
             name: 'Body',
-            translation: [0, 1.65, 0],
-            meshes: bodyGeos.map(g => ({ geo: g, materialIndex: m.body }))
+            translation: [0, 1.55, 0],
+            meshes: [
+                { geo: torsoSuit, materialIndex: 1 },
+                { geo: mergeGeos(vest, bowtieL, bowtieR), materialIndex: 0 },
+                { geo: medallion, materialIndex: 6 }
+            ]
         },
         {
             name: 'Head',
             translation: [0, 3.65, 0],
-            meshes: headGeos.map(g => ({ geo: g, materialIndex: m.head }))
+            meshes: [
+                { geo: skinGeo, materialIndex: 2 },
+                { geo: mergeGeos(hairAndBrows, mouth), materialIndex: 3 },
+                { geo: whiteGeo, materialIndex: 4 },
+                { geo: eyes.pupils, materialIndex: 5 },
+                { geo: collarBack, materialIndex: 0 }
+            ]
         },
         {
             name: 'Arm_L',
-            translation: [-1.1, 3.3, 0],
-            meshes: armLGeo ? [{ geo: armLGeo, materialIndex: m.armL }] : []
+            translation: [-1.08, 3.15, 0],
+            meshes: [
+                { geo: armL.sleeve, materialIndex: 1 },
+                { geo: armL.hand, materialIndex: 2 }
+            ]
         },
         {
             name: 'Arm_R',
-            translation: [1.1, 3.3, 0],
-            meshes: armRGeo ? [{ geo: armRGeo, materialIndex: m.armR }] : []
+            translation: [1.08, 3.15, 0],
+            meshes: [
+                { geo: armR.sleeve, materialIndex: 1 },
+                { geo: armR.hand, materialIndex: 2 }
+            ]
         },
         {
             name: 'Leg_L',
-            translation: [-0.45, 1.6, 0],
-            meshes: legLGeo ? [{ geo: legLGeo, materialIndex: m.legL }] : []
+            translation: [-0.46, 1.55, 0],
+            meshes: [
+                { geo: legL.leg, materialIndex: 1 },
+                { geo: legL.shoe, materialIndex: 0 }
+            ]
         },
         {
             name: 'Leg_R',
-            translation: [0.45, 1.6, 0],
-            meshes: legRGeo ? [{ geo: legRGeo, materialIndex: m.legR }] : []
+            translation: [0.46, 1.55, 0],
+            meshes: [
+                { geo: legR.leg, materialIndex: 1 },
+                { geo: legR.shoe, materialIndex: 0 }
+            ]
+        },
+        {
+            name: 'Extra',
+            translation: [0, 3.25, -0.35],
+            meshes: [{ geo: cape, materialIndex: 7 }]
         }
     ];
 
-    if (extraGeos && extraGeos.length > 0) {
-        nodes.push({
-            name: 'Extra',
-            translation: [0, 0, 0],
-            meshes: extraGeos.map(g => ({ geo: g, materialIndex: m.extra }))
-        });
+    return buildGLB({ materials: mats, nodes: [{ name: 'Root', translation: [0, 0, 0], children }] });
+}
+
+// 1. PUMPKIN FIEND (Orange #E9862A)
+function buildPumpkinFiend() {
+    const mats = [
+        { name: 'BrightPumpkin', baseColorFactor: hex2rgba(0xFF7714), roughness: 0.42, metalness: 0.02, emissiveFactor: [0.16, 0.05, 0.0] }, // 0
+        { name: 'DeepGroove',    baseColorFactor: hex2rgba(0xD84E00), roughness: 0.55, metalness: 0.0 }, // 1
+        { name: 'WarmGlow',      baseColorFactor: hex2rgba(0xFFF176), roughness: 0.15, metalness: 0.0, emissiveFactor: [0.85, 0.58, 0.05] }, // 2
+        { name: 'VineGreen',     baseColorFactor: hex2rgba(0x43A047), roughness: 0.50, metalness: 0.0, emissiveFactor: [0.02, 0.08, 0.02] }, // 3
+        { name: 'LeafBright',    baseColorFactor: hex2rgba(0x76FF03), roughness: 0.45, metalness: 0.0, emissiveFactor: [0.05, 0.14, 0.0] }, // 4
+        { name: 'BarkBoot',      baseColorFactor: hex2rgba(0x4E342E), roughness: 0.65, metalness: 0.0 }  // 5
+    ];
+
+    // Large rounded ridged pumpkin head
+    const coreHead = buildEllipsoid(1.22, 1.05, 1.15, 16, 16);
+    const lobes = [];
+    for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * PI * 2;
+        const lobe = buildEllipsoid(0.55, 1.08, 0.55, 12, 10);
+        translateGeo(lobe, cos(a) * 0.72, 0, sin(a) * 0.66);
+        lobes.push(lobe);
+    }
+    const pumpkinHead = mergeGeos(coreHead, ...lobes);
+
+    // Glowing carved eyes & comical toothy grin
+    const eyeL = translateGeo(rotateGeoZ(buildEllipsoid(0.28, 0.30, 0.14, 10, 10), -0.15), -0.44, 0.16, 1.08);
+    const eyeR = translateGeo(rotateGeoZ(buildEllipsoid(0.28, 0.30, 0.14, 10, 10), 0.15), 0.44, 0.16, 1.08);
+    const grinMain = translateGeo(buildEllipsoid(0.66, 0.24, 0.14, 12, 8), 0, -0.36, 1.06);
+    const grinL = translateGeo(rotateGeoZ(buildEllipsoid(0.28, 0.18, 0.12, 8, 8), -0.45), -0.48, -0.26, 0.98);
+    const grinR = translateGeo(rotateGeoZ(buildEllipsoid(0.28, 0.18, 0.12, 8, 8), 0.45), 0.48, -0.26, 0.98);
+    const glowFeatures = mergeGeos(eyeL, eyeR, grinMain, grinL, grinR);
+
+    //Pumpkin teeth
+    const tooth1 = translateGeo(buildEllipsoid(0.13, 0.12, 0.12, 6, 6), -0.22, -0.22, 1.14);
+    const tooth2 = translateGeo(buildEllipsoid(0.13, 0.12, 0.12, 6, 6), 0.22, -0.22, 1.14);
+
+    // Crooked stem & leaf collar
+    const stemBase = translateGeo(buildCylinder(0.24, 0.16, 0.45, 10), 0, 0.98, 0);
+    const stemTip = translateGeo(rotateGeoZ(buildCone(0.16, 0.48, 8), 0.45), -0.08, 1.35, 0);
+    const leafHead = translateGeo(rotateGeoZ(buildEllipsoid(0.42, 0.08, 0.24, 8, 8), -0.25), 0.35, 1.02, 0.15);
+
+    // Compact bouncy body with leafy neck ruff
+    const belly = translateGeo(buildEllipsoid(1.06, 1.02, 0.94, 14, 14), 0, 0.85, 0);
+    const bellyGlow = translateGeo(buildEllipsoid(0.52, 0.45, 0.22, 10, 10), 0, 0.85, 0.82);
+    const leaves = [];
+    for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * PI * 2;
+        const lf = buildEllipsoid(0.45, 0.10, 0.32, 8, 8);
+        rotateGeoY(lf, -a);
+        translateGeo(lf, cos(a) * 0.72, 1.68, sin(a) * 0.65);
+        leaves.push(lf);
     }
 
-    return nodes;
-}
-
-// Standard arm: rounded capsule-ish limb with pivot at top
-function makeArm(len = 1.55) {
-    // Cylinder with rounded ends – approximate with tapered cylinder
-    const upper = buildCylinder(0.22, 0.18, len * 0.55, 8);
-    translateGeo(upper, 0, -len * 0.55, 0);
-    const lower = buildCylinder(0.18, 0.15, len * 0.45, 8);
-    translateGeo(lower, 0, -len, 0);
-    const elbow = buildEllipsoid(0.19, 0.19, 0.19, 6, 6);
-    translateGeo(elbow, 0, -len * 0.55, 0);
-    return mergeGeos(upper, lower, elbow);
-}
-
-// Standard leg: tapered cylinder
-function makeLeg(len = 1.6) {
-    const upper = buildCylinder(0.26, 0.22, len * 0.55, 8);
-    translateGeo(upper, 0, -len * 0.55, 0);
-    const lower = buildCylinder(0.22, 0.16, len * 0.45, 8);
-    translateGeo(lower, 0, -len, 0);
-    const knee = buildEllipsoid(0.22, 0.22, 0.22, 6, 6);
-    translateGeo(knee, 0, -len * 0.55, 0);
-    // Foot
-    const foot = buildEllipsoid(0.18, 0.14, 0.35, 6, 6);
-    translateGeo(foot, 0, -len, 0.18);
-    return mergeGeos(upper, lower, knee, foot);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MONSTER BUILDERS
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ── 0. VAMPIRE ────────────────────────────────────────────────────────────────
-function buildVampire() {
-    const hex = RACE_COLORS[0];
-    const mats = [
-        ...baseMaterials(hex),
-        { name: 'Pale',    baseColorFactor: [0.93, 0.88, 0.86, 1], roughness: 0.6, metalness: 0.0 },  // M=5 pale face
-        { name: 'Cape',    baseColorFactor: [0.60, 0.05, 0.08, 1], roughness: 0.65, metalness: 0.0, doubleSided: true }, // M=6 cape lining
-        { name: 'CapeOut', baseColorFactor: [0.06, 0.04, 0.10, 1], roughness: 0.65, metalness: 0.0, doubleSided: true }, // M=7 cape outer
-        { name: 'Hair',    baseColorFactor: [0.06, 0.04, 0.10, 1], roughness: 0.8,  metalness: 0.0 }, // M=8 dark hair
-        { name: 'Fang',    baseColorFactor: [1.0,  1.0,  1.0,  1], roughness: 0.2,  metalness: 0.1 }, // M=9 ivory fangs
-    ];
-
-    // Head: pale rounded oval face with widow's peak
-    const skull = buildEllipsoid(0.72, 0.82, 0.72, 14, 12);
-    const jaw = buildEllipsoid(0.62, 0.35, 0.60, 10, 10);
-    translateGeo(jaw, 0, -0.65, 0);
-
-    // Swept hair / widow's peak
-    const hair = buildEllipsoid(0.74, 0.25, 0.60, 8, 8);
-    translateGeo(hair, 0, 0.72, -0.1);
-    // Side hair swept back
-    const hairL = buildEllipsoid(0.22, 0.45, 0.22, 6, 6);
-    translateGeo(hairL, -0.55, 0.35, -0.25);
-    const hairR = buildEllipsoid(0.22, 0.45, 0.22, 6, 6);
-    translateGeo(hairR, 0.55, 0.35, -0.25);
-
-    // Collar / high cravat
-    const collar = buildCylinder(0.65, 0.55, 0.55, 10);
-    translateGeo(collar, 0, -1.15, 0);
-
-    // Fangs (small cones, visible in front)
-    const fangL = buildCone(0.07, 0.3, 6);
-    rotateGeoZ(fangL, PI);
-    translateGeo(fangL, -0.15, -0.8, 0.55);
-    const fangR = buildCone(0.07, 0.3, 6);
-    rotateGeoZ(fangR, PI);
-    translateGeo(fangR, 0.15, -0.8, 0.55);
-
-    // Eyes – glowing red
-    const eyeL = buildEllipsoid(0.10, 0.10, 0.08, 6, 6);
-    translateGeo(eyeL, -0.28, 0.10, 0.62);
-    const eyeR = buildEllipsoid(0.10, 0.10, 0.08, 6, 6);
-    translateGeo(eyeR, 0.28, 0.10, 0.62);
-
-    // Body: dark suit with broad shoulders
-    const torso = buildEllipsoid(1.0, 1.15, 0.62, 12, 10);
-    translateGeo(torso, 0, 0.85, 0);
-    const shoulders = buildEllipsoid(1.25, 0.35, 0.65, 10, 8);
-    translateGeo(shoulders, 0, 1.55, 0);
-
-    // Cape: billowing quad attached to body
-    const capeGeo = buildPlane(2.2, 2.8, 5, 8);
-    // Shift pivot to top
-    translateGeo(capeGeo, 0, -1.4, -0.35);
-    rotateGeoX(capeGeo, -0.2);
-
-    const headGeos  = [skull, jaw, hair, hairL, hairR, collar];
-    const headMats  = [5, 5, 8, 8, 8, 1]; // pale, pale, hair, hair, hair, dark
-
-    // Build multi-material head as separate sub-nodes (but we merge with one material group)
-    // For simplicity, use the pale mat for most, override eyes separately
-    const headMerged = mergeGeos(skull, jaw, collar);
-    const hairMerged = mergeGeos(hair, hairL, hairR);
-
-    // Eyes with glow material added in scene desc directly
-    const mEyeGlow = { name: 'VampEye', baseColorFactor: [1, 0.05, 0.05, 1], roughness: 0.1, metalness: 0.0, emissiveFactor: [0.9, 0.0, 0.0] };
-    mats.push(mEyeGlow); // index 10
+    const armL = makeCartoonArm(1.38, 0.28, 0.24, 1.1);
+    const armR = makeCartoonArm(1.38, 0.28, 0.24, 1.1);
+    const legL = makeCartoonLeg(1.50, 0.34, 0.26, 1.1);
+    const legR = makeCartoonLeg(1.50, 0.34, 0.26, 1.1);
 
     const children = [
         {
             name: 'Body',
-            translation: [0, 1.65, 0],
+            translation: [0, 1.50, 0],
             meshes: [
-                { geo: torso, materialIndex: M_DARK },
-                { geo: shoulders, materialIndex: M_DARK }
-            ]
-        },
-        {
-            name: 'Head',
-            translation: [0, 3.65, 0],
-            meshes: [
-                { geo: headMerged, materialIndex: 5 },
-                { geo: hairMerged, materialIndex: 8 },
-                { geo: fangL, materialIndex: 9 },
-                { geo: fangR, materialIndex: 9 },
-                { geo: eyeL, materialIndex: 10 },
-                { geo: eyeR, materialIndex: 10 }
-            ]
-        },
-        {
-            name: 'Arm_L',
-            translation: [-1.1, 3.3, 0],
-            meshes: [{ geo: makeArm(), materialIndex: M_DARK }]
-        },
-        {
-            name: 'Arm_R',
-            translation: [1.1, 3.3, 0],
-            meshes: [{ geo: makeArm(), materialIndex: M_DARK }]
-        },
-        {
-            name: 'Leg_L',
-            translation: [-0.42, 1.6, 0],
-            meshes: [{ geo: makeLeg(), materialIndex: M_DARK }]
-        },
-        {
-            name: 'Leg_R',
-            translation: [0.42, 1.6, 0],
-            meshes: [{ geo: makeLeg(), materialIndex: M_DARK }]
-        },
-        {
-            name: 'Extra',
-            translation: [0, 3.2, 0],
-            meshes: [{ geo: capeGeo, materialIndex: 6 }]
-        }
-    ];
-
-    return buildGLB({
-        materials: mats,
-        nodes: [{ name: 'Root', translation: [0, 0, 0], children }]
-    });
-}
-
-// ── 1. PUMPKIN FIEND ──────────────────────────────────────────────────────────
-function buildPumpkinFiend() {
-    const hex = RACE_COLORS[1];
-    const mats = [
-        ...baseMaterials(hex),
-        { name: 'PumpkinRidge', baseColorFactor: hex2rgba(0xBF5200), roughness: 0.6, metalness: 0.0 }, // M=5 darker ridges
-        { name: 'GlowEyes',    baseColorFactor: [1.0, 0.85, 0.0, 0.9], roughness: 0.1, metalness: 0.0, emissiveFactor: [0.9, 0.5, 0.0] }, // M=6
-        { name: 'Stem',        baseColorFactor: [0.17, 0.38, 0.06, 1], roughness: 0.8, metalness: 0.0 }, // M=7 green stem
-        { name: 'Dark',        baseColorFactor: [0.05, 0.03, 0.08, 1], roughness: 0.9, metalness: 0.0 }, // M=8 carved gap
-    ];
-
-    // Pumpkin head: ridged sphere
-    const mainHead = buildEllipsoid(0.95, 0.88, 0.88, 16, 14);
-    // Ridges by adding displaced spheres
-    const ridgeA = buildEllipsoid(0.18, 0.85, 0.18, 8, 8);
-    translateGeo(ridgeA, 0.62, 0, 0);
-    const ridgeB = buildEllipsoid(0.18, 0.85, 0.18, 8, 8);
-    translateGeo(ridgeB, -0.62, 0, 0);
-    const ridgeC = buildEllipsoid(0.18, 0.85, 0.18, 8, 8);
-    translateGeo(ridgeC, 0, 0, 0.62);
-    // Stem
-    const stem = buildCylinder(0.12, 0.07, 0.55, 6);
-    rotateGeoX(stem, -0.2);
-    translateGeo(stem, 0, 0.88, 0);
-    // Carved triangle eyes (sunken ellipsoids representing glowing gaps)
-    const eyeL = buildEllipsoid(0.14, 0.12, 0.08, 6, 6);
-    translateGeo(eyeL, -0.35, 0.12, 0.78);
-    const eyeR = buildEllipsoid(0.14, 0.12, 0.08, 6, 6);
-    translateGeo(eyeR, 0.35, 0.12, 0.78);
-    // Jagged mouth (series of small wedges)
-    const mouth = buildEllipsoid(0.38, 0.07, 0.06, 6, 4);
-    translateGeo(mouth, 0, -0.30, 0.82);
-    const toothL = buildCone(0.08, 0.15, 4);
-    rotateGeoX(toothL, PI);
-    translateGeo(toothL, -0.15, -0.24, 0.82);
-    const toothR = buildCone(0.08, 0.15, 4);
-    rotateGeoX(toothR, PI);
-    translateGeo(toothR, 0.15, -0.24, 0.82);
-    // Vine tendril
-    const vine = buildCylinder(0.04, 0.02, 0.55, 5);
-    rotateGeoZ(vine, 0.6);
-    translateGeo(vine, -0.7, 0.55, 0);
-
-    // Body: stout rounded pumpkin-ish torso
-    const torso = buildEllipsoid(0.88, 1.0, 0.70, 12, 10);
-    translateGeo(torso, 0, 0.85, 0);
-    const hip = buildEllipsoid(0.72, 0.42, 0.58, 10, 8);
-    translateGeo(hip, 0, 0, 0);
-
-    const armLeg = makeLeg(1.45); // shorter squatter legs
-
-    const children = [
-        {
-            name: 'Body',
-            translation: [0, 1.65, 0],
-            meshes: [
-                { geo: torso, materialIndex: M_PRIMARY },
-                { geo: hip, materialIndex: M_PRIMARY }
-            ]
-        },
-        {
-            name: 'Head',
-            translation: [0, 3.5, 0],
-            meshes: [
-                { geo: mainHead, materialIndex: M_PRIMARY },
-                { geo: ridgeA, materialIndex: 5 },
-                { geo: ridgeB, materialIndex: 5 },
-                { geo: ridgeC, materialIndex: 5 },
-                { geo: stem, materialIndex: 7 },
-                { geo: vine, materialIndex: 7 },
-                { geo: eyeL, materialIndex: 6 },
-                { geo: eyeR, materialIndex: 6 },
-                { geo: mouth, materialIndex: 8 },
-                { geo: toothL, materialIndex: 6 },
-                { geo: toothR, materialIndex: 6 }
-            ]
-        },
-        {
-            name: 'Arm_L',
-            translation: [-1.0, 3.2, 0],
-            meshes: [{ geo: makeArm(1.45), materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Arm_R',
-            translation: [1.0, 3.2, 0],
-            meshes: [{ geo: makeArm(1.45), materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Leg_L',
-            translation: [-0.4, 1.6, 0],
-            meshes: [{ geo: makeLeg(1.45), materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Leg_R',
-            translation: [0.4, 1.6, 0],
-            meshes: [{ geo: makeLeg(1.45), materialIndex: M_PRIMARY }]
-        },
-        { name: 'Extra', translation: [0, 0, 0], meshes: [] }
-    ];
-
-    return buildGLB({
-        materials: mats,
-        nodes: [{ name: 'Root', translation: [0, 0, 0], children }]
-    });
-}
-
-// ── 2. CURSED MUMMY ───────────────────────────────────────────────────────────
-function buildCursedMummy() {
-    const hex = RACE_COLORS[2];
-    const mats = [
-        ...baseMaterials(hex),
-        { name: 'Bandage',  baseColorFactor: hex2rgba(hex), roughness: 0.85, metalness: 0.0 },    // M=5 bandages
-        { name: 'Gap',      baseColorFactor: [0.08, 0.06, 0.12, 1], roughness: 0.9, metalness: 0.0 }, // M=6 dark gaps
-        { name: 'LooseEnd', baseColorFactor: hex2rgba(hex, 0.85), roughness: 0.85, metalness: 0.0, doubleSided: true }, // M=7 trailing strips
-        { name: 'EyeGlow',  baseColorFactor: [0.8, 0.6, 0.0, 1], roughness: 0.1, metalness: 0.0, emissiveFactor: [0.5, 0.35, 0.0] }, // M=8
-    ];
-
-    // Mummy head: rounded cube-ish with bandage layers
-    const head = buildEllipsoid(0.72, 0.78, 0.72, 12, 10);
-    // Bandage wrapping rings
-    const wrap1 = buildCylinder(0.74, 0.72, 0.14, 10, true);
-    translateGeo(wrap1, 0, 0.15, 0);
-    const wrap2 = buildCylinder(0.73, 0.71, 0.12, 10, true);
-    translateGeo(wrap2, 0, -0.12, 0);
-    const wrap3 = buildCylinder(0.72, 0.70, 0.12, 10, true);
-    translateGeo(wrap3, 0, -0.35, 0);
-    // Eye glow
-    const eyeL = buildEllipsoid(0.09, 0.09, 0.08, 6, 6);
-    translateGeo(eyeL, -0.26, 0.14, 0.64);
-    const eyeR = buildEllipsoid(0.09, 0.09, 0.08, 6, 6);
-    translateGeo(eyeR, 0.26, 0.14, 0.64);
-
-    // Loose trailing bandage strips (planes)
-    const strip1 = buildPlane(0.12, 0.85, 1, 4);
-    rotateGeoX(strip1, 0.3);
-    translateGeo(strip1, 0.25, -0.85, -0.35);
-    const strip2 = buildPlane(0.10, 0.65, 1, 4);
-    rotateGeoX(strip2, 0.15);
-    translateGeo(strip2, -0.2, -1.1, -0.4);
-
-    // Body: rounded torso with bandage wraps
-    const torso = buildEllipsoid(0.95, 1.1, 0.68, 12, 10);
-    translateGeo(torso, 0, 0.85, 0);
-    const bWrap1 = buildCylinder(0.96, 0.94, 0.16, 10, true);
-    translateGeo(bWrap1, 0, 0.85 + 0.55, 0);
-    const bWrap2 = buildCylinder(0.95, 0.93, 0.14, 10, true);
-    translateGeo(bWrap2, 0, 0.85 + 0.2, 0);
-    const bWrap3 = buildCylinder(0.94, 0.92, 0.14, 10, true);
-    translateGeo(bWrap3, 0, 0.85 - 0.15, 0);
-
-    // Arms stretch forward (zombie pose) – reflected via translation, not geom
-    const armGeo = makeArm(1.55);
-
-    // Trailing bandage strip for Extra node (trailing from back waist)
-    const waistStrip = buildPlane(0.14, 0.9, 1, 4);
-    rotateGeoX(waistStrip, 0.4);
-    translateGeo(waistStrip, 0.2, -0.45, -0.45);
-
-    const children = [
-        {
-            name: 'Body',
-            translation: [0, 1.65, 0],
-            meshes: [
-                { geo: torso, materialIndex: M_PRIMARY },
-                { geo: bWrap1, materialIndex: 5 },
-                { geo: bWrap2, materialIndex: 5 },
-                { geo: bWrap3, materialIndex: 5 }
-            ]
-        },
-        {
-            name: 'Head',
-            translation: [0, 3.65, 0],
-            meshes: [
-                { geo: head, materialIndex: M_PRIMARY },
-                { geo: wrap1, materialIndex: 5 },
-                { geo: wrap2, materialIndex: 5 },
-                { geo: wrap3, materialIndex: 5 },
-                { geo: eyeL, materialIndex: 8 },
-                { geo: eyeR, materialIndex: 8 },
-                { geo: strip1, materialIndex: 7 },
-                { geo: strip2, materialIndex: 7 }
-            ]
-        },
-        {
-            name: 'Arm_L',
-            translation: [-1.05, 3.25, 0.3],
-            meshes: [{ geo: armGeo, materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Arm_R',
-            translation: [1.05, 3.25, 0.3],
-            meshes: [{ geo: armGeo, materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Leg_L',
-            translation: [-0.42, 1.6, 0],
-            meshes: [{ geo: makeLeg(), materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Leg_R',
-            translation: [0.42, 1.6, 0],
-            meshes: [{ geo: makeLeg(), materialIndex: M_PRIMARY }]
-        },
-        { name: 'Extra', translation: [0, 2.0, 0], meshes: [{ geo: waistStrip, materialIndex: 7 }] }
-    ];
-
-    return buildGLB({
-        materials: mats,
-        nodes: [{ name: 'Root', translation: [0, 0, 0], children }]
-    });
-}
-
-// ── 3. FRANKEN-ZOMBIE ─────────────────────────────────────────────────────────
-function buildFrankenZombie() {
-    const hex = RACE_COLORS[3];
-    const mats = [
-        ...baseMaterials(hex),
-        { name: 'Bolt',     baseColorFactor: [0.7, 0.75, 0.78, 1], roughness: 0.2, metalness: 0.9 }, // M=5
-        { name: 'Stitch',   baseColorFactor: [0.1, 0.08, 0.15, 1], roughness: 0.9, metalness: 0.0 }, // M=6
-        { name: 'Hair',     baseColorFactor: [0.07, 0.06, 0.10, 1], roughness: 0.85, metalness: 0.0 }, // M=7
-        { name: 'EyeGlow',  baseColorFactor: [0.3, 1.0, 0.3, 1],   roughness: 0.1, metalness: 0.0, emissiveFactor: [0.1, 0.7, 0.1] }, // M=8
-    ];
-
-    // Head: flat-top heavy brow
-    const skull = buildEllipsoid(0.82, 0.72, 0.75, 12, 10);
-    const flatTop = buildCylinder(0.8, 0.82, 0.18, 10, false);
-    translateGeo(flatTop, 0, 0.68, 0);
-    const brow = buildEllipsoid(0.88, 0.22, 0.55, 8, 6);
-    translateGeo(brow, 0, 0.18, 0.42);
-    // Dark hair slab on top
-    const hair = buildEllipsoid(0.82, 0.2, 0.68, 8, 6);
-    translateGeo(hair, 0, 0.82, -0.05);
-    // Neck bolts
-    const boltL = buildCylinder(0.12, 0.12, 0.65, 6);
-    rotateGeoZ(boltL, PI / 2);
-    translateGeo(boltL, -0.85, -0.42, 0);
-    const boltR = buildCylinder(0.12, 0.12, 0.65, 6);
-    rotateGeoZ(boltR, PI / 2);
-    translateGeo(boltR, 0.45, -0.42, 0);
-    // Bolt heads
-    const boltHeadL = buildCylinder(0.2, 0.2, 0.1, 6);
-    rotateGeoZ(boltHeadL, PI / 2);
-    translateGeo(boltHeadL, -1.0, -0.42, 0);
-    const boltHeadR = buildCylinder(0.2, 0.2, 0.1, 6);
-    rotateGeoZ(boltHeadR, PI / 2);
-    translateGeo(boltHeadR, 1.0, -0.42, 0);
-    // Eyes
-    const eyeL = buildEllipsoid(0.10, 0.10, 0.08, 6, 6);
-    translateGeo(eyeL, -0.28, 0.10, 0.68);
-    const eyeR = buildEllipsoid(0.10, 0.10, 0.08, 6, 6);
-    translateGeo(eyeR, 0.28, 0.10, 0.68);
-
-    // Body: broad shoulders, stout
-    const torso = buildEllipsoid(1.12, 1.1, 0.70, 12, 10);
-    translateGeo(torso, 0, 0.85, 0);
-    const shoulderL = buildEllipsoid(0.38, 0.32, 0.32, 8, 6);
-    translateGeo(shoulderL, -1.2, 1.6, 0);
-    const shoulderR = buildEllipsoid(0.38, 0.32, 0.32, 8, 6);
-    translateGeo(shoulderR, 1.2, 1.6, 0);
-
-    // Arms outstretched forward (zombie)
-    const armG = makeArm(1.60);
-
-    const children = [
-        {
-            name: 'Body',
-            translation: [0, 1.65, 0],
-            meshes: [
-                { geo: torso, materialIndex: M_PRIMARY },
-                { geo: shoulderL, materialIndex: M_PRIMARY },
-                { geo: shoulderR, materialIndex: M_PRIMARY }
-            ]
-        },
-        {
-            name: 'Head',
-            translation: [0, 3.65, 0],
-            meshes: [
-                { geo: skull, materialIndex: M_PRIMARY },
-                { geo: flatTop, materialIndex: M_PRIMARY },
-                { geo: brow, materialIndex: M_PRIMARY },
-                { geo: hair, materialIndex: 7 },
-                { geo: boltL, materialIndex: 5 },
-                { geo: boltR, materialIndex: 5 },
-                { geo: boltHeadL, materialIndex: 5 },
-                { geo: boltHeadR, materialIndex: 5 },
-                { geo: eyeL, materialIndex: 8 },
-                { geo: eyeR, materialIndex: 8 }
-            ]
-        },
-        {
-            name: 'Arm_L',
-            translation: [-1.15, 3.3, 0.35],
-            meshes: [{ geo: armG, materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Arm_R',
-            translation: [1.15, 3.3, 0.35],
-            meshes: [{ geo: armG, materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Leg_L',
-            translation: [-0.48, 1.6, 0],
-            meshes: [{ geo: makeLeg(), materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Leg_R',
-            translation: [0.48, 1.6, 0],
-            meshes: [{ geo: makeLeg(), materialIndex: M_PRIMARY }]
-        },
-        { name: 'Extra', translation: [0, 0, 0], meshes: [] }
-    ];
-
-    return buildGLB({
-        materials: mats,
-        nodes: [{ name: 'Root', translation: [0, 0, 0], children }]
-    });
-}
-
-// ── 4. SPECTRAL BANSHEE ───────────────────────────────────────────────────────
-function buildSpectralBanshee() {
-    const hex = RACE_COLORS[4];
-    const mats = [
-        ...baseMaterials(hex),
-        { name: 'Spectral', baseColorFactor: hex2rgba(hex, 0.72), roughness: 0.2, metalness: 0.05,
-          emissiveFactor: [0.0, 0.05, 0.35], alphaMode: 'BLEND', doubleSided: true }, // M=5 semi-transparent form
-        { name: 'EyeGlow',  baseColorFactor: [0.8, 0.9, 1.0, 1], roughness: 0.0, metalness: 0.0, emissiveFactor: [0.3, 0.5, 1.0] }, // M=6
-        { name: 'VeilEdge', baseColorFactor: hex2rgba(hex, 0.45), roughness: 0.2, metalness: 0.0, alphaMode: 'BLEND', doubleSided: true }, // M=7 tattered edge
-    ];
-
-    // Head: eerie elongated skull-face
-    const skull = buildEllipsoid(0.65, 0.85, 0.62, 14, 12);
-    const jaw = buildEllipsoid(0.50, 0.30, 0.48, 10, 8);
-    translateGeo(jaw, 0, -0.75, 0);
-    // Hollow eyes (large glowing)
-    const eyeL = buildEllipsoid(0.15, 0.18, 0.10, 8, 6);
-    translateGeo(eyeL, -0.25, 0.18, 0.52);
-    const eyeR = buildEllipsoid(0.15, 0.18, 0.10, 8, 6);
-    translateGeo(eyeR, 0.25, 0.18, 0.52);
-    // Long flowing hair tendrils (cylinders waving up)
-    const hair1 = buildCylinder(0.08, 0.02, 1.2, 5, true);
-    rotateGeoX(hair1, -0.7);
-    rotateGeoZ(hair1, 0.4);
-    translateGeo(hair1, -0.45, 0.7, -0.3);
-    const hair2 = buildCylinder(0.07, 0.02, 1.0, 5, true);
-    rotateGeoX(hair2, -0.5);
-    rotateGeoZ(hair2, -0.3);
-    translateGeo(hair2, 0.35, 0.8, -0.25);
-    const hair3 = buildCylinder(0.06, 0.02, 0.9, 5, true);
-    rotateGeoX(hair3, -0.8);
-    translateGeo(hair3, 0.0, 0.85, -0.35);
-
-    // Body: elongated torso merging into spectral tail
-    const torso = buildEllipsoid(0.80, 1.2, 0.55, 12, 10);
-    translateGeo(torso, 0, 0.85, 0);
-    const shoulders = buildEllipsoid(1.05, 0.25, 0.52, 10, 8);
-    translateGeo(shoulders, 0, 1.65, 0);
-
-    // Spectral lower body / veil (instead of legs – plane shapes)
-    const veil1 = buildPlane(1.2, 2.2, 4, 6);
-    rotateGeoY(veil1, 0);
-    translateGeo(veil1, 0.15, -0.55, 0);
-    const veil2 = buildPlane(1.0, 2.0, 4, 6);
-    rotateGeoY(veil2, 1.2);
-    translateGeo(veil2, -0.25, -0.65, 0.1);
-    const veil3 = buildPlane(0.85, 1.8, 4, 5);
-    rotateGeoY(veil3, -1.0);
-    translateGeo(veil3, 0.1, -0.75, -0.1);
-
-    // Long sweeping arms
-    const longArm = makeArm(1.85);
-
-    // Leg_L/R nodes kept but use spectral veil geometry so rig stays intact
-    const legGeo = buildCylinder(0.08, 0.02, 0.9, 5, true);
-    translateGeo(legGeo, 0, -0.9, 0);
-
-    const children = [
-        {
-            name: 'Body',
-            translation: [0, 1.65, 0],
-            meshes: [
-                { geo: torso, materialIndex: 5 },
-                { geo: shoulders, materialIndex: 5 },
-                { geo: veil1, materialIndex: 5 },
-                { geo: veil2, materialIndex: 5 },
-                { geo: veil3, materialIndex: 7 }
-            ]
-        },
-        {
-            name: 'Head',
-            translation: [0, 3.65, 0],
-            meshes: [
-                { geo: skull, materialIndex: M_PRIMARY },
-                { geo: jaw, materialIndex: M_PRIMARY },
-                { geo: eyeL, materialIndex: 6 },
-                { geo: eyeR, materialIndex: 6 },
-                { geo: hair1, materialIndex: 5 },
-                { geo: hair2, materialIndex: 5 },
-                { geo: hair3, materialIndex: 5 }
-            ]
-        },
-        {
-            name: 'Arm_L',
-            translation: [-1.05, 3.3, 0],
-            meshes: [{ geo: longArm, materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Arm_R',
-            translation: [1.05, 3.3, 0],
-            meshes: [{ geo: longArm, materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Leg_L',
-            translation: [-0.28, 0.9, 0],
-            meshes: [{ geo: legGeo, materialIndex: 5 }]
-        },
-        {
-            name: 'Leg_R',
-            translation: [0.28, 0.9, 0],
-            meshes: [{ geo: legGeo, materialIndex: 5 }]
-        },
-        { name: 'Extra', translation: [0, 2.2, -0.3], meshes: [{ geo: buildPlane(2.0, 2.6, 4, 7), materialIndex: 7 }] }
-    ];
-
-    return buildGLB({
-        materials: mats,
-        nodes: [{ name: 'Root', translation: [0, 0, 0], children }]
-    });
-}
-
-// ── 5. WITCH-IMP ──────────────────────────────────────────────────────────────
-function buildWitchImp() {
-    const hex = RACE_COLORS[5];
-    const mats = [
-        ...baseMaterials(hex),
-        { name: 'HatDark',  baseColorFactor: [0.06, 0.04, 0.10, 1], roughness: 0.75, metalness: 0.0 }, // M=5
-        { name: 'SkinTone', baseColorFactor: [0.62, 0.52, 0.45, 1], roughness: 0.65, metalness: 0.0 }, // M=6
-        { name: 'EyeGlow',  baseColorFactor: [0.8, 0.2, 1.0, 1],    roughness: 0.1,  metalness: 0.0, emissiveFactor: [0.4, 0.0, 0.6] }, // M=7
-        { name: 'HatBand',  baseColorFactor: hex2rgba(hex, 1), roughness: 0.6, metalness: 0.1 }, // M=8
-    ];
-
-    // Rounded face with pointed ears
-    const face = buildEllipsoid(0.68, 0.72, 0.65, 12, 10);
-    const earL = buildCone(0.14, 0.6, 5);
-    rotateGeoZ(earL, -0.3);
-    rotateGeoX(earL, -0.1);
-    translateGeo(earL, -0.65, 0.4, 0);
-    const earR = buildCone(0.14, 0.6, 5);
-    rotateGeoZ(earR, 0.3);
-    rotateGeoX(earR, -0.1);
-    translateGeo(earR, 0.65, 0.4, 0);
-    // Crooked nose
-    const nose = buildEllipsoid(0.10, 0.12, 0.18, 6, 6);
-    translateGeo(nose, 0, -0.12, 0.58);
-    // Eyes
-    const eyeL = buildEllipsoid(0.11, 0.11, 0.08, 6, 6);
-    translateGeo(eyeL, -0.25, 0.16, 0.56);
-    const eyeR = buildEllipsoid(0.11, 0.11, 0.08, 6, 6);
-    translateGeo(eyeR, 0.25, 0.16, 0.56);
-
-    // Crooked pointed hat
-    const brim = buildCylinder(1.15, 1.18, 0.14, 14, false);
-    translateGeo(brim, 0, 0.65, 0);
-    const cone = buildCone(0.75, 1.95, 12);
-    // Slightly crooked
-    rotateGeoZ(cone, 0.12);
-    translateGeo(cone, -0.08, 0.8, 0);
-    // Hat band
-    const band = buildCylinder(0.76, 0.76, 0.18, 12, true);
-    rotateGeoZ(band, 0.12);
-    translateGeo(band, -0.08, 0.82, 0);
-
-    // Body: short rotund imp
-    const torso = buildEllipsoid(0.78, 0.90, 0.58, 12, 10);
-    translateGeo(torso, 0, 0.80, 0);
-    const cape = buildPlane(1.55, 1.8, 4, 6);
-    translateGeo(cape, 0, 0.55, -0.32);
-
-    const children = [
-        {
-            name: 'Body',
-            translation: [0, 1.65, 0],
-            meshes: [
-                { geo: torso, materialIndex: M_PRIMARY },
-                { geo: cape, materialIndex: 5 }
+                { geo: belly, materialIndex: 0 },
+                { geo: bellyGlow, materialIndex: 2 },
+                { geo: mergeGeos(...leaves), materialIndex: 4 }
             ]
         },
         {
             name: 'Head',
             translation: [0, 3.55, 0],
             meshes: [
-                { geo: face, materialIndex: M_PRIMARY },
-                { geo: earL, materialIndex: M_PRIMARY },
-                { geo: earR, materialIndex: M_PRIMARY },
-                { geo: nose, materialIndex: 6 },
-                { geo: eyeL, materialIndex: 7 },
-                { geo: eyeR, materialIndex: 7 },
-                { geo: brim, materialIndex: 5 },
-                { geo: cone, materialIndex: 5 },
-                { geo: band, materialIndex: 8 }
+                { geo: mergeGeos(pumpkinHead, tooth1, tooth2), materialIndex: 0 },
+                { geo: glowFeatures, materialIndex: 2 },
+                { geo: mergeGeos(stemBase, stemTip), materialIndex: 3 },
+                { geo: leafHead, materialIndex: 4 }
             ]
         },
         {
             name: 'Arm_L',
-            translation: [-0.92, 3.1, 0],
-            meshes: [{ geo: makeArm(1.45), materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Arm_R',
-            translation: [0.92, 3.1, 0],
-            meshes: [{ geo: makeArm(1.45), materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Leg_L',
-            translation: [-0.38, 1.55, 0],
-            meshes: [{ geo: makeLeg(1.45), materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Leg_R',
-            translation: [0.38, 1.55, 0],
-            meshes: [{ geo: makeLeg(1.45), materialIndex: M_PRIMARY }]
-        },
-        { name: 'Extra', translation: [0, 3.0, -0.3], meshes: [{ geo: buildPlane(1.55, 1.8, 4, 5), materialIndex: 5 }] }
-    ];
-
-    return buildGLB({
-        materials: mats,
-        nodes: [{ name: 'Root', translation: [0, 0, 0], children }]
-    });
-}
-
-// ── 6. WEREWOLF ───────────────────────────────────────────────────────────────
-function buildWerewolf() {
-    const hex = RACE_COLORS[6];
-    const mats = [
-        ...baseMaterials(hex),
-        { name: 'FurDark',  baseColorFactor: [0.15, 0.17, 0.20, 1], roughness: 0.85, metalness: 0.0 }, // M=5
-        { name: 'Snout',    baseColorFactor: [0.22, 0.22, 0.25, 1], roughness: 0.75, metalness: 0.0 }, // M=6
-        { name: 'EyeGlow',  baseColorFactor: [1.0, 0.2, 0.0, 1],   roughness: 0.1,  metalness: 0.0, emissiveFactor: [0.8, 0.1, 0.0] }, // M=7
-        { name: 'Teeth',    baseColorFactor: [0.95, 0.92, 0.88, 1], roughness: 0.3,  metalness: 0.0 }, // M=8
-        { name: 'Claw',     baseColorFactor: [0.15, 0.14, 0.18, 1], roughness: 0.5,  metalness: 0.1 }, // M=9
-    ];
-
-    // Wolf head: heavy brow, broad
-    const skull = buildEllipsoid(0.82, 0.76, 0.78, 12, 10);
-    const brow = buildEllipsoid(0.85, 0.20, 0.48, 8, 6);
-    translateGeo(brow, 0, 0.22, 0.50);
-    // Snout (long muzzle)
-    const snout = buildEllipsoid(0.42, 0.35, 0.72, 10, 8);
-    translateGeo(snout, 0, -0.22, 0.68);
-    const nose = buildEllipsoid(0.18, 0.13, 0.14, 6, 6);
-    translateGeo(nose, 0, -0.08, 1.28);
-    // Pointed ears
-    const earL = buildCone(0.22, 0.82, 6);
-    rotateGeoZ(earL, -0.2);
-    rotateGeoX(earL, -0.1);
-    translateGeo(earL, -0.62, 0.75, -0.15);
-    const earR = buildCone(0.22, 0.82, 6);
-    rotateGeoZ(earR, 0.2);
-    rotateGeoX(earR, -0.1);
-    translateGeo(earR, 0.62, 0.75, -0.15);
-    // Inner ear
-    const earInL = buildCone(0.12, 0.55, 5);
-    rotateGeoZ(earInL, -0.2);
-    rotateGeoX(earInL, -0.1);
-    translateGeo(earInL, -0.62, 0.75, -0.12);
-    // Eyes
-    const eyeL = buildEllipsoid(0.10, 0.10, 0.08, 6, 6);
-    translateGeo(eyeL, -0.30, 0.18, 0.64);
-    const eyeR = buildEllipsoid(0.10, 0.10, 0.08, 6, 6);
-    translateGeo(eyeR, 0.30, 0.18, 0.64);
-    // Fang teeth
-    const toothL = buildCone(0.07, 0.25, 4);
-    rotateGeoX(toothL, PI);
-    translateGeo(toothL, -0.15, -0.38, 1.28);
-    const toothR = buildCone(0.07, 0.25, 4);
-    rotateGeoX(toothR, PI);
-    translateGeo(toothR, 0.15, -0.38, 1.28);
-
-    // Fur-silhouette body (slightly flattened ellipsoid)
-    const torso = buildEllipsoid(1.05, 1.15, 0.68, 12, 10);
-    translateGeo(torso, 0, 0.85, 0);
-    const furShoulder = buildEllipsoid(1.3, 0.35, 0.72, 10, 8);
-    translateGeo(furShoulder, 0, 1.62, 0);
-    // Fur spikes on back
-    const spikeA = buildCone(0.12, 0.55, 5);
-    rotateGeoX(spikeA, PI);
-    translateGeo(spikeA, 0.22, 1.85, -0.58);
-    const spikeB = buildCone(0.12, 0.45, 5);
-    rotateGeoX(spikeB, PI);
-    translateGeo(spikeB, -0.18, 1.72, -0.55);
-
-    // Tail
-    const tail1 = buildCylinder(0.22, 0.14, 0.85, 7);
-    rotateGeoX(tail1, -PI * 0.55);
-    translateGeo(tail1, 0, 0.55, -0.65);
-    const tail2 = buildCylinder(0.14, 0.08, 0.65, 6);
-    rotateGeoX(tail2, -PI * 0.35);
-    translateGeo(tail2, 0, 0.95, -1.35);
-    const tailTip = buildEllipsoid(0.14, 0.14, 0.18, 6, 6);
-    translateGeo(tailTip, 0, 1.15, -1.85);
-
-    // Claws on hands
-    const clawGeo = buildCone(0.05, 0.22, 4);
-    rotateGeoX(clawGeo, PI * 0.85);
-
-    const wolfArmGeo = makeArm(1.62);
-
-    const children = [
-        {
-            name: 'Body',
-            translation: [0, 1.65, 0],
+            translation: [-1.08, 3.05, 0],
             meshes: [
-                { geo: torso, materialIndex: M_PRIMARY },
-                { geo: furShoulder, materialIndex: 5 },
-                { geo: spikeA, materialIndex: 5 },
-                { geo: spikeB, materialIndex: 5 },
-                { geo: tail1, materialIndex: M_PRIMARY },
-                { geo: tail2, materialIndex: M_PRIMARY },
-                { geo: tailTip, materialIndex: 5 }
+                { geo: armL.sleeve, materialIndex: 3 },
+                { geo: armL.hand, materialIndex: 0 }
             ]
         },
         {
-            name: 'Head',
-            translation: [0, 3.65, 0],
+            name: 'Arm_R',
+            translation: [1.08, 3.05, 0],
             meshes: [
-                { geo: skull, materialIndex: M_PRIMARY },
-                { geo: brow, materialIndex: 5 },
-                { geo: snout, materialIndex: 6 },
-                { geo: nose, materialIndex: 5 },
-                { geo: earL, materialIndex: M_PRIMARY },
-                { geo: earR, materialIndex: M_PRIMARY },
-                { geo: earInL, materialIndex: 5 },
-                { geo: eyeL, materialIndex: 7 },
-                { geo: eyeR, materialIndex: 7 },
-                { geo: toothL, materialIndex: 8 },
-                { geo: toothR, materialIndex: 8 }
+                { geo: armR.sleeve, materialIndex: 3 },
+                { geo: armR.hand, materialIndex: 0 }
             ]
         },
         {
-            name: 'Arm_L',
-            translation: [-1.2, 3.35, 0],
-            meshes: [{ geo: wolfArmGeo, materialIndex: M_PRIMARY }]
-        },
-        {
-            name: 'Arm_R',
-            translation: [1.2, 3.35, 0],
-            meshes: [{ geo: wolfArmGeo, materialIndex: M_PRIMARY }]
-        },
-        {
             name: 'Leg_L',
-            translation: [-0.46, 1.6, 0],
-            meshes: [{ geo: makeLeg(1.65), materialIndex: M_PRIMARY }]
+            translation: [-0.46, 1.50, 0],
+            meshes: [
+                { geo: legL.leg, materialIndex: 3 },
+                { geo: legL.shoe, materialIndex: 5 }
+            ]
         },
         {
             name: 'Leg_R',
-            translation: [0.46, 1.6, 0],
-            meshes: [{ geo: makeLeg(1.65), materialIndex: M_PRIMARY }]
+            translation: [0.46, 1.50, 0],
+            meshes: [
+                { geo: legR.leg, materialIndex: 3 },
+                { geo: legR.shoe, materialIndex: 5 }
+            ]
         },
         {
             name: 'Extra',
-            translation: [0, 1.2, -0.5],
-            meshes: [
-                { geo: tail1, materialIndex: M_PRIMARY },
-                { geo: tail2, materialIndex: 5 },
-                { geo: tailTip, materialIndex: 5 }
-            ]
+            translation: [0, 3.1, -0.55],
+            meshes: [{ geo: buildCurvedCape(0.9, 1.4, 1.4, -0.2, 4, 5), materialIndex: 4 }]
         }
     ];
 
-    return buildGLB({
-        materials: mats,
-        nodes: [{ name: 'Root', translation: [0, 0, 0], children }]
-    });
+    return buildGLB({ materials: mats, nodes: [{ name: 'Root', translation: [0, 0, 0], children }] });
 }
 
-// ── 7. SKELETON ───────────────────────────────────────────────────────────────
-function buildSkeleton() {
-    const hex = RACE_COLORS[7];
+// 2. CURSED MUMMY (Cream & Yellow #F0F136)
+function buildCursedMummy() {
     const mats = [
-        ...baseMaterials(hex),
-        { name: 'BoneShad', baseColorFactor: [0.78, 0.76, 0.72, 1], roughness: 0.65, metalness: 0.0 }, // M=5 slightly darker bone
-        { name: 'EyeGlow',  baseColorFactor: [0.3, 0.9, 0.9, 1], roughness: 0.1,   metalness: 0.0, emissiveFactor: [0.0, 0.5, 0.6] }, // M=6
-        { name: 'Joint',    baseColorFactor: [0.72, 0.70, 0.66, 1], roughness: 0.7, metalness: 0.0 }, // M=7 joints
+        { name: 'CreamBandage',  baseColorFactor: hex2rgba(0xFFF8DC), roughness: 0.60, metalness: 0.0, emissiveFactor: [0.08, 0.07, 0.04] }, // 0
+        { name: 'YellowBandage', baseColorFactor: hex2rgba(0xF0F136), roughness: 0.50, metalness: 0.05, doubleSided: true, emissiveFactor: [0.14, 0.14, 0.02] }, // 1
+        { name: 'ShadowRecess',  baseColorFactor: hex2rgba(0x231934), roughness: 0.80, metalness: 0.0 }, // 2
+        { name: 'GlowingEye',    baseColorFactor: hex2rgba(0xFFEE58), roughness: 0.15, metalness: 0.0, emissiveFactor: [0.85, 0.75, 0.05] }, // 3
+        { name: 'PupilDark',     baseColorFactor: hex2rgba(0x1A1026), roughness: 0.20, metalness: 0.0 }, // 4
+        { name: 'GoldAmulet',    baseColorFactor: hex2rgba(0xFFB300), roughness: 0.30, metalness: 0.65, emissiveFactor: [0.18, 0.10, 0.0] } // 5
     ];
 
-    // Skull: rounded dome with protruding cheekbones and jaw
-    const dome = buildEllipsoid(0.72, 0.80, 0.70, 14, 12);
-    const cheekL = buildEllipsoid(0.25, 0.20, 0.22, 6, 6);
-    translateGeo(cheekL, -0.62, -0.22, 0.42);
-    const cheekR = buildEllipsoid(0.25, 0.20, 0.22, 6, 6);
-    translateGeo(cheekR, 0.62, -0.22, 0.42);
-    const jaw = buildEllipsoid(0.55, 0.28, 0.52, 10, 8);
-    translateGeo(jaw, 0, -0.72, 0.08);
-    const jawLine = buildCylinder(0.54, 0.50, 0.20, 10, true);
-    translateGeo(jawLine, 0, -0.58, 0);
-    // Eye sockets (dark recesses)
-    const eyeL = buildEllipsoid(0.15, 0.18, 0.10, 6, 6);
-    translateGeo(eyeL, -0.27, 0.15, 0.58);
-    const eyeR = buildEllipsoid(0.15, 0.18, 0.10, 6, 6);
-    translateGeo(eyeR, 0.27, 0.15, 0.58);
-    // Nasal cavity
-    const nasal = buildEllipsoid(0.10, 0.14, 0.08, 5, 5);
-    translateGeo(nasal, 0, -0.08, 0.64);
-    // Teeth (lower jaw)
-    const makeToothGeo = (dx) => {
-        const t = buildEllipsoid(0.07, 0.12, 0.06, 4, 4);
-        translateGeo(t, dx, -0.88, 0.42);
-        return t;
-    };
-    const teeth = [makeToothGeo(-0.22), makeToothGeo(-0.08), makeToothGeo(0.08), makeToothGeo(0.22)];
+    // Rounded cartoon head with layered curved bandage rings
+    const headCore = buildEllipsoid(1.08, 1.12, 1.04, 16, 16);
+    const faceSlot = translateGeo(buildEllipsoid(0.86, 0.42, 0.35, 12, 10), 0, 0.12, 0.78);
+    const bandTop = translateGeo(rotateGeoZ(buildEllipsoid(1.16, 0.34, 1.10, 12, 12), 0.08), 0, 0.62, 0);
+    const bandMid = translateGeo(rotateGeoZ(buildEllipsoid(1.15, 0.28, 1.10, 12, 12), -0.09), 0, -0.32, 0.04);
+    const bandJaw = translateGeo(buildEllipsoid(0.96, 0.36, 0.96, 12, 12), 0, -0.74, 0.05);
 
-    // Spine / ribcage as body
-    const spineMain = buildCylinder(0.12, 0.10, 2.0, 6);
-    translateGeo(spineMain, 0, 0, 0);
-    // Ribs as torus arcs
-    function makeRib(y) {
-        const rib = buildEllipsoid(0.65, 0.12, 0.30, 8, 5);
-        translateGeo(rib, 0, y, 0.1);
-        return rib;
-    }
-    const ribs = [makeRib(1.4), makeRib(1.05), makeRib(0.7), makeRib(0.38)];
-    // Pelvis bowl
-    const pelvis = buildEllipsoid(0.62, 0.28, 0.45, 10, 8);
-    translateGeo(pelvis, 0, 0.1, 0);
-    const pelvisRim = buildCylinder(0.60, 0.64, 0.18, 10, true);
-    translateGeo(pelvisRim, 0, 0.2, 0);
+    const eyeL = translateGeo(buildEllipsoid(0.28, 0.30, 0.14, 10, 10), -0.36, 0.14, 0.96);
+    const eyeR = translateGeo(buildEllipsoid(0.28, 0.30, 0.14, 10, 10), 0.36, 0.14, 0.96);
+    const pupilL = translateGeo(buildEllipsoid(0.13, 0.15, 0.09, 8, 8), -0.34, 0.14, 1.06);
+    const pupilR = translateGeo(buildEllipsoid(0.13, 0.15, 0.09, 8, 8), 0.34, 0.14, 1.06);
 
-    // Bone arms: upper/lower with ball joints
-    function makeBoneArm(len = 1.55) {
-        const upper = buildCylinder(0.10, 0.08, len * 0.5, 6);
-        translateGeo(upper, 0, -len * 0.5, 0);
-        const lower = buildCylinder(0.08, 0.06, len * 0.5, 6);
-        translateGeo(lower, 0, -len, 0);
-        const elbow = buildEllipsoid(0.11, 0.11, 0.11, 6, 6);
-        translateGeo(elbow, 0, -len * 0.5, 0);
-        const hand = buildEllipsoid(0.12, 0.10, 0.10, 6, 6);
-        translateGeo(hand, 0, -len, 0);
-        return mergeGeos(upper, lower, elbow, hand);
-    }
-    function makeBoneLeg(len = 1.6) {
-        const upper = buildCylinder(0.12, 0.10, len * 0.52, 6);
-        translateGeo(upper, 0, -len * 0.52, 0);
-        const lower = buildCylinder(0.10, 0.08, len * 0.48, 6);
-        translateGeo(lower, 0, -len, 0);
-        const knee = buildEllipsoid(0.12, 0.12, 0.12, 6, 6);
-        translateGeo(knee, 0, -len * 0.52, 0);
-        const foot = buildEllipsoid(0.09, 0.09, 0.24, 6, 6);
-        translateGeo(foot, 0, -len, 0.12);
-        return mergeGeos(upper, lower, knee, foot);
-    }
+    // Chubby wrapped body with layered bandages & golden scarab belt
+    const bodyCore = translateGeo(buildEllipsoid(1.04, 1.08, 0.88, 14, 14), 0, 0.85, 0);
+    const wrapB1 = translateGeo(rotateGeoZ(buildEllipsoid(1.10, 0.26, 0.92, 12, 12), 0.10), 0, 1.30, 0);
+    const wrapB2 = translateGeo(rotateGeoZ(buildEllipsoid(1.12, 0.28, 0.94, 12, 12), -0.08), 0, 0.85, 0);
+    const wrapB3 = translateGeo(rotateGeoZ(buildEllipsoid(1.06, 0.26, 0.90, 12, 12), 0.07), 0, 0.40, 0);
+    const scarab = translateGeo(buildEllipsoid(0.32, 0.26, 0.18, 10, 10), 0, 1.15, 0.86);
+
+    // Animated loose bandage ends
+    const tail1 = translateGeo(buildCurvedCape(0.38, 0.55, 1.95, -0.30, 4, 7), -0.28, 0, 0);
+    const tail2 = translateGeo(buildCurvedCape(0.34, 0.48, 1.65, -0.22, 4, 6), 0.32, -0.15, -0.08);
+
+    const armL = makeCartoonArm(1.38, 0.29, 0.25, 1.08);
+    const armR = makeCartoonArm(1.38, 0.29, 0.25, 1.08);
+    const legL = makeCartoonLeg(1.48, 0.34, 0.27, 1.08);
+    const legR = makeCartoonLeg(1.48, 0.34, 0.27, 1.08);
 
     const children = [
         {
             name: 'Body',
-            translation: [0, 1.65, 0],
+            translation: [0, 1.48, 0],
             meshes: [
-                { geo: spineMain, materialIndex: M_PRIMARY },
-                { geo: ribs[0], materialIndex: M_PRIMARY },
-                { geo: ribs[1], materialIndex: M_PRIMARY },
-                { geo: ribs[2], materialIndex: M_PRIMARY },
-                { geo: ribs[3], materialIndex: M_PRIMARY },
-                { geo: pelvis, materialIndex: 5 },
-                { geo: pelvisRim, materialIndex: 5 }
+                { geo: mergeGeos(bodyCore, wrapB2), materialIndex: 0 },
+                { geo: mergeGeos(wrapB1, wrapB3), materialIndex: 1 },
+                { geo: scarab, materialIndex: 5 }
             ]
         },
         {
             name: 'Head',
-            translation: [0, 3.65, 0],
+            translation: [0, 3.52, 0],
             meshes: [
-                { geo: dome, materialIndex: M_PRIMARY },
-                { geo: cheekL, materialIndex: 5 },
-                { geo: cheekR, materialIndex: 5 },
-                { geo: jaw, materialIndex: M_PRIMARY },
-                { geo: jawLine, materialIndex: 5 },
-                { geo: nasal, materialIndex: 7 },
-                { geo: eyeL, materialIndex: 6 },
-                { geo: eyeR, materialIndex: 6 },
-                ...teeth.map(t => ({ geo: t, materialIndex: M_PRIMARY }))
+                { geo: mergeGeos(headCore, bandJaw), materialIndex: 0 },
+                { geo: mergeGeos(bandTop, bandMid), materialIndex: 1 },
+                { geo: faceSlot, materialIndex: 2 },
+                { geo: mergeGeos(eyeL, eyeR), materialIndex: 3 },
+                { geo: mergeGeos(pupilL, pupilR), materialIndex: 4 }
             ]
         },
         {
             name: 'Arm_L',
-            translation: [-1.05, 3.3, 0],
-            meshes: [{ geo: makeBoneArm(), materialIndex: M_PRIMARY }]
+            translation: [-1.06, 3.05, 0.15],
+            meshes: [
+                { geo: armL.sleeve, materialIndex: 0 },
+                { geo: armL.hand, materialIndex: 1 }
+            ]
         },
         {
             name: 'Arm_R',
-            translation: [1.05, 3.3, 0],
-            meshes: [{ geo: makeBoneArm(), materialIndex: M_PRIMARY }]
+            translation: [1.06, 3.05, 0.15],
+            meshes: [
+                { geo: armR.sleeve, materialIndex: 0 },
+                { geo: armR.hand, materialIndex: 1 }
+            ]
         },
         {
             name: 'Leg_L',
-            translation: [-0.38, 1.6, 0],
-            meshes: [{ geo: makeBoneLeg(), materialIndex: M_PRIMARY }]
+            translation: [-0.45, 1.48, 0],
+            meshes: [
+                { geo: legL.leg, materialIndex: 0 },
+                { geo: legL.shoe, materialIndex: 1 }
+            ]
         },
         {
             name: 'Leg_R',
-            translation: [0.38, 1.6, 0],
-            meshes: [{ geo: makeBoneLeg(), materialIndex: M_PRIMARY }]
+            translation: [0.45, 1.48, 0],
+            meshes: [
+                { geo: legR.leg, materialIndex: 0 },
+                { geo: legR.shoe, materialIndex: 1 }
+            ]
+        },
+        {
+            name: 'Extra',
+            translation: [0, 3.15, -0.55],
+            meshes: [{ geo: mergeGeos(tail1, tail2), materialIndex: 1 }]
+        }
+    ];
+
+    return buildGLB({ materials: mats, nodes: [{ name: 'Root', translation: [0, 0, 0], children }] });
+}
+
+// 3. FRANKEN-ZOMBIE (Green #50C878)
+function buildFrankenZombie() {
+    const mats = [
+        { name: 'BrightZombieGreen', baseColorFactor: hex2rgba(0x50C878), roughness: 0.48, metalness: 0.02, emissiveFactor: [0.03, 0.12, 0.05] }, // 0
+        { name: 'JacketPurple',      baseColorFactor: hex2rgba(0x392359), roughness: 0.60, metalness: 0.05 }, // 1
+        { name: 'SilverBolt',        baseColorFactor: hex2rgba(0xCFD8DC), roughness: 0.25, metalness: 0.85, emissiveFactor: [0.06, 0.08, 0.10] }, // 2
+        { name: 'DarkHairStitch',    baseColorFactor: hex2rgba(0x161224), roughness: 0.70, metalness: 0.0 }, // 3
+        { name: 'WhiteEye',          baseColorFactor: [1.0, 1.0, 1.0, 1], roughness: 0.20, metalness: 0.0, emissiveFactor: [0.15, 0.15, 0.15] }, // 4
+        { name: 'LimeGlow',          baseColorFactor: hex2rgba(0xAEEA00), roughness: 0.25, metalness: 0.0, emissiveFactor: [0.35, 0.65, 0.0] }  // 5
+    ];
+
+    // Large rounded-square head with softened edges
+    const headBlock = buildRoundedForm(1.08, 1.15, 0.98, 0.58, 16, 16);
+    const heavyJaw = translateGeo(buildRoundedForm(1.12, 0.48, 1.02, 0.65, 12, 12), 0, -0.62, 0.08);
+    const heavyBrow = translateGeo(buildEllipsoid(1.14, 0.26, 0.55, 12, 10), 0, 0.42, 0.65);
+
+    // Chunky dark hair & stitches
+    const hairBlock = translateGeo(buildRoundedForm(1.14, 0.44, 1.04, 0.6, 12, 12), 0, 0.96, -0.02);
+    const stitchMain = translateGeo(rotateGeoZ(buildEllipsoid(0.38, 0.05, 0.06, 8, 6), 0.25), -0.35, 0.68, 0.96);
+    const stitchCross1 = translateGeo(buildEllipsoid(0.05, 0.16, 0.06, 6, 6), -0.48, 0.64, 0.97);
+    const stitchCross2 = translateGeo(buildEllipsoid(0.05, 0.16, 0.06, 6, 6), -0.22, 0.72, 0.97);
+
+    // Metallic neck/cheek bolts
+    const boltShaftL = translateGeo(rotateGeoZ(buildCylinder(0.16, 0.16, 0.55, 10), PI / 2), -0.95, -0.45, 0);
+    const boltCapL = translateGeo(rotateGeoZ(buildCylinder(0.28, 0.28, 0.18, 8), PI / 2), -1.35, -0.45, 0);
+    const boltShaftR = translateGeo(rotateGeoZ(buildCylinder(0.16, 0.16, 0.55, 10), -PI / 2), 0.95, -0.45, 0);
+    const boltCapR = translateGeo(rotateGeoZ(buildCylinder(0.28, 0.28, 0.18, 8), -PI / 2), 1.35, -0.45, 0);
+
+    const eyes = buildCartoonEyes(0.42, 0.10, 0.94, 0.27, 0.29, -0.14);
+    const underbiteToothL = translateGeo(buildCone(0.10, 0.24, 6), -0.26, -0.52, 1.04);
+    const underbiteToothR = translateGeo(buildCone(0.10, 0.24, 6), 0.26, -0.52, 1.04);
+
+    // Broad muscular upper body
+    const upperTorso = translateGeo(buildRoundedForm(1.24, 1.12, 0.88, 0.65, 14, 14), 0, 0.95, 0);
+    const shirtFront = translateGeo(buildEllipsoid(0.92, 0.92, 0.82, 12, 12), 0, 0.88, 0.12);
+
+    const armL = makeCartoonArm(1.52, 0.34, 0.28, 1.25);
+    const armR = makeCartoonArm(1.52, 0.34, 0.28, 1.25);
+    const legL = makeCartoonLeg(1.55, 0.36, 0.30, 1.25);
+    const legR = makeCartoonLeg(1.55, 0.36, 0.30, 1.25);
+
+    const children = [
+        {
+            name: 'Body',
+            translation: [0, 1.55, 0],
+            meshes: [
+                { geo: upperTorso, materialIndex: 1 },
+                { geo: shirtFront, materialIndex: 5 }
+            ]
+        },
+        {
+            name: 'Head',
+            translation: [0, 3.72, 0],
+            meshes: [
+                { geo: mergeGeos(headBlock, heavyJaw, heavyBrow), materialIndex: 0 },
+                { geo: mergeGeos(hairBlock, stitchMain, stitchCross1, stitchCross2, eyes.brows, eyes.pupils), materialIndex: 3 },
+                { geo: mergeGeos(boltShaftL, boltCapL, boltShaftR, boltCapR), materialIndex: 2 },
+                { geo: mergeGeos(eyes.sclera, underbiteToothL, underbiteToothR), materialIndex: 4 }
+            ]
+        },
+        {
+            name: 'Arm_L',
+            translation: [-1.25, 3.25, 0.15],
+            meshes: [
+                { geo: armL.sleeve, materialIndex: 1 },
+                { geo: armL.hand, materialIndex: 0 }
+            ]
+        },
+        {
+            name: 'Arm_R',
+            translation: [1.25, 3.25, 0.15],
+            meshes: [
+                { geo: armR.sleeve, materialIndex: 1 },
+                { geo: armR.hand, materialIndex: 0 }
+            ]
+        },
+        {
+            name: 'Leg_L',
+            translation: [-0.50, 1.55, 0],
+            meshes: [
+                { geo: legL.leg, materialIndex: 1 },
+                { geo: legL.shoe, materialIndex: 3 }
+            ]
+        },
+        {
+            name: 'Leg_R',
+            translation: [0.50, 1.55, 0],
+            meshes: [
+                { geo: legR.leg, materialIndex: 1 },
+                { geo: legR.shoe, materialIndex: 3 }
+            ]
         },
         { name: 'Extra', translation: [0, 0, 0], meshes: [] }
     ];
 
-    return buildGLB({
-        materials: mats,
-        nodes: [{ name: 'Root', translation: [0, 0, 0], children }]
-    });
+    return buildGLB({ materials: mats, nodes: [{ name: 'Root', translation: [0, 0, 0], children }] });
+}
+
+// 4. SPECTRAL BANSHEE (Electric Cyan-Blue #0033FF + Bright Rim Accents)
+function buildSpectralBanshee() {
+    const mats = [
+        { name: 'SpectralBlue',  baseColorFactor: hex2rgba(0x1E6BFF), roughness: 0.25, metalness: 0.05, emissiveFactor: [0.06, 0.22, 0.75] }, // 0
+        { name: 'GhostVeil',     baseColorFactor: hex2rgba(0x40C4FF, 0.84), roughness: 0.20, metalness: 0.0, alphaMode: 'BLEND', doubleSided: true, emissiveFactor: [0.10, 0.45, 0.90] }, // 1
+        { name: 'CyanGlowCore',  baseColorFactor: hex2rgba(0xE0F7FA), roughness: 0.10, metalness: 0.0, emissiveFactor: [0.45, 0.90, 1.0] }, // 2
+        { name: 'DeepIndigo',    baseColorFactor: hex2rgba(0x0D1B4C), roughness: 0.50, metalness: 0.0 }  // 3
+    ];
+
+    // Large expressive ghostly head with flowing spectral hair plumes
+    const headMain = buildEllipsoid(1.08, 1.12, 1.02, 16, 16);
+    const cheekL = translateGeo(buildEllipsoid(0.42, 0.35, 0.38, 10, 10), -0.65, -0.15, 0.42);
+    const cheekR = translateGeo(buildEllipsoid(0.42, 0.35, 0.38, 10, 10), 0.65, -0.15, 0.42);
+
+    const plumeCenter = translateGeo(rotateGeoX(buildCone(0.68, 1.45, 12), -0.55), 0, 0.85, -0.15);
+    const plumeL = translateGeo(rotateGeoZ(rotateGeoX(buildCone(0.48, 1.25, 10), -0.45), 0.45), -0.58, 0.68, -0.15);
+    const plumeR = translateGeo(rotateGeoZ(rotateGeoX(buildCone(0.48, 1.25, 10), -0.45), -0.45), 0.58, 0.68, -0.15);
+
+    const eyeL = translateGeo(buildEllipsoid(0.30, 0.34, 0.14, 12, 12), -0.38, 0.15, 0.92);
+    const eyeR = translateGeo(buildEllipsoid(0.30, 0.34, 0.14, 12, 12), 0.38, 0.15, 0.92);
+    const pupilL = translateGeo(buildEllipsoid(0.14, 0.16, 0.08, 8, 8), -0.36, 0.15, 1.02);
+    const pupilR = translateGeo(buildEllipsoid(0.14, 0.16, 0.08, 8, 8), 0.36, 0.15, 1.02);
+    const wailMouth = translateGeo(buildEllipsoid(0.28, 0.32, 0.14, 10, 10), 0, -0.42, 0.94);
+
+    // Rounded floating upper body tapering into swirling ghost tail
+    const chest = translateGeo(buildEllipsoid(1.02, 0.95, 0.85, 14, 14), 0, 1.05, 0);
+    const heartGlow = translateGeo(buildEllipsoid(0.48, 0.45, 0.25, 10, 10), 0, 1.10, 0.72);
+    const tailUpper = translateGeo(buildCylinder(0.52, 0.96, 1.15, 14), 0, -0.05, 0);
+    const tailLower = translateGeo(rotateGeoX(buildCone(0.52, 1.20, 12), PI * 0.88), 0, -0.05, -0.10);
+
+    // Swirling side wisps for Leg_L / Leg_R
+    const wispL = translateGeo(rotateGeoX(buildCone(0.34, 1.15, 10), PI * 0.88), 0, 0, 0);
+    const wispR = translateGeo(rotateGeoX(buildCone(0.34, 1.15, 10), PI * 0.88), 0, 0, 0);
+
+    const armL = makeCartoonArm(1.38, 0.26, 0.20, 1.05);
+    const armR = makeCartoonArm(1.38, 0.26, 0.20, 1.05);
+
+    const children = [
+        {
+            name: 'Body',
+            translation: [0, 1.45, 0],
+            meshes: [
+                { geo: chest, materialIndex: 0 },
+                { geo: mergeGeos(tailUpper, tailLower), materialIndex: 1 },
+                { geo: heartGlow, materialIndex: 2 }
+            ]
+        },
+        {
+            name: 'Head',
+            translation: [0, 3.60, 0],
+            meshes: [
+                { geo: mergeGeos(headMain, cheekL, cheekR), materialIndex: 0 },
+                { geo: mergeGeos(plumeCenter, plumeL, plumeR), materialIndex: 1 },
+                { geo: mergeGeos(eyeL, eyeR), materialIndex: 2 },
+                { geo: mergeGeos(pupilL, pupilR, wailMouth), materialIndex: 3 }
+            ]
+        },
+        {
+            name: 'Arm_L',
+            translation: [-1.05, 3.15, 0],
+            meshes: [
+                { geo: armL.sleeve, materialIndex: 1 },
+                { geo: armL.hand, materialIndex: 2 }
+            ]
+        },
+        {
+            name: 'Arm_R',
+            translation: [1.05, 3.15, 0],
+            meshes: [
+                { geo: armR.sleeve, materialIndex: 1 },
+                { geo: armR.hand, materialIndex: 2 }
+            ]
+        },
+        {
+            name: 'Leg_L',
+            translation: [-0.42, 1.35, 0],
+            meshes: [{ geo: wispL, materialIndex: 1 }]
+        },
+        {
+            name: 'Leg_R',
+            translation: [0.42, 1.35, 0],
+            meshes: [{ geo: wispR, materialIndex: 1 }]
+        },
+        {
+            name: 'Extra',
+            translation: [0, 3.15, -0.45],
+            meshes: [{ geo: buildCurvedCape(1.3, 2.2, 2.1, -0.35, 5, 7), materialIndex: 1 }]
+        }
+    ];
+
+    return buildGLB({ materials: mats, nodes: [{ name: 'Root', translation: [0, 0, 0], children }] });
+}
+
+// 5. WITCH-IMP (Purple #6A2FA0)
+function buildWitchImp() {
+    const mats = [
+        { name: 'RoyalPurple',   baseColorFactor: hex2rgba(0x8E38D5), roughness: 0.45, metalness: 0.05, emissiveFactor: [0.10, 0.02, 0.16] }, // 0
+        { name: 'ImpSkin',       baseColorFactor: hex2rgba(0xCE93D8), roughness: 0.50, metalness: 0.0, emissiveFactor: [0.06, 0.03, 0.08] }, // 1
+        { name: 'DarkVelvetHat', baseColorFactor: hex2rgba(0x23113A), roughness: 0.55, metalness: 0.05 }, // 2
+        { name: 'GoldBuckle',    baseColorFactor: hex2rgba(0xFFD54F), roughness: 0.25, metalness: 0.70, emissiveFactor: [0.22, 0.16, 0.0] }, // 3
+        { name: 'WhiteSclera',   baseColorFactor: [1.0, 1.0, 1.0, 1], roughness: 0.20, metalness: 0.0, emissiveFactor: [0.15, 0.15, 0.15] }, // 4
+        { name: 'MagentaGlow',   baseColorFactor: hex2rgba(0xFF4081), roughness: 0.20, metalness: 0.0, emissiveFactor: [0.55, 0.05, 0.25] }  // 5
+    ];
+
+    // Expressive imp head with large pointed ears & mischievous grin
+    const headMain = buildEllipsoid(1.06, 1.02, 1.00, 16, 16);
+    const earL = translateGeo(rotateGeoZ(buildCone(0.28, 0.95, 8), 1.18), -0.98, 0.08, 0);
+    const earR = translateGeo(rotateGeoZ(buildCone(0.28, 0.95, 8), -1.18), 0.98, 0.08, 0);
+    const nose = translateGeo(rotateGeoX(buildCone(0.18, 0.45, 8), PI * 0.45), 0, -0.05, 0.96);
+
+    const eyes = buildCartoonEyes(0.40, 0.12, 0.90, 0.28, 0.30, 0.24);
+    const grin = translateGeo(buildEllipsoid(0.45, 0.16, 0.12, 10, 8), 0, -0.42, 0.90);
+
+    // Large crooked pointed witch hat with bright ribbon & gold buckle
+    const hatBrim = translateGeo(buildEllipsoid(1.75, 0.14, 1.72, 16, 12), 0, 0.68, 0);
+    const hatConeLower = translateGeo(buildCylinder(1.02, 0.58, 1.05, 14), 0, 0.72, 0);
+    const hatConeTip = translateGeo(rotateGeoZ(buildCone(0.58, 1.15, 12), 0.42), -0.18, 1.68, -0.05);
+    const hatBand = translateGeo(buildCylinder(1.05, 0.95, 0.24, 14, true), 0, 0.76, 0);
+    const hatBuckle = translateGeo(buildRoundedForm(0.36, 0.32, 0.12, 0.5, 8, 8), 0, 0.88, 0.98);
+
+    // Compact tunic body
+    const tunic = translateGeo(buildCylinder(1.08, 0.78, 1.45, 14), 0, 0.22, 0);
+    const belt = translateGeo(buildCylinder(0.98, 0.95, 0.22, 14, true), 0, 0.72, 0);
+    const beltBuckle = translateGeo(buildRoundedForm(0.32, 0.28, 0.12, 0.5, 8, 8), 0, 0.82, 0.94);
+
+    const armL = makeCartoonArm(1.35, 0.26, 0.22, 1.12);
+    const armR = makeCartoonArm(1.35, 0.26, 0.22, 1.12);
+    const legL = makeCartoonLeg(1.48, 0.30, 0.24, 1.15);
+    const legR = makeCartoonLeg(1.48, 0.30, 0.24, 1.15);
+
+    const children = [
+        {
+            name: 'Body',
+            translation: [0, 1.48, 0],
+            meshes: [
+                { geo: tunic, materialIndex: 0 },
+                { geo: belt, materialIndex: 2 },
+                { geo: beltBuckle, materialIndex: 3 }
+            ]
+        },
+        {
+            name: 'Head',
+            translation: [0, 3.42, 0],
+            meshes: [
+                { geo: mergeGeos(headMain, earL, earR, nose), materialIndex: 1 },
+                { geo: mergeGeos(hatBrim, hatConeLower, hatConeTip, eyes.brows, grin), materialIndex: 2 },
+                { geo: mergeGeos(hatBand, eyes.pupils), materialIndex: 5 },
+                { geo: hatBuckle, materialIndex: 3 },
+                { geo: eyes.sclera, materialIndex: 4 }
+            ]
+        },
+        {
+            name: 'Arm_L',
+            translation: [-1.02, 2.98, 0],
+            meshes: [
+                { geo: armL.sleeve, materialIndex: 0 },
+                { geo: armL.hand, materialIndex: 1 }
+            ]
+        },
+        {
+            name: 'Arm_R',
+            translation: [1.02, 2.98, 0],
+            meshes: [
+                { geo: armR.sleeve, materialIndex: 0 },
+                { geo: armR.hand, materialIndex: 1 }
+            ]
+        },
+        {
+            name: 'Leg_L',
+            translation: [-0.42, 1.48, 0],
+            meshes: [
+                { geo: legL.leg, materialIndex: 2 },
+                { geo: legL.shoe, materialIndex: 0 }
+            ]
+        },
+        {
+            name: 'Leg_R',
+            translation: [0.42, 1.48, 0],
+            meshes: [
+                { geo: legR.leg, materialIndex: 2 },
+                { geo: legR.shoe, materialIndex: 0 }
+            ]
+        },
+        {
+            name: 'Extra',
+            translation: [0, 3.05, -0.35],
+            meshes: [{ geo: buildCurvedCape(1.2, 1.9, 1.75, -0.28, 5, 6), materialIndex: 0 }]
+        }
+    ];
+
+    return buildGLB({ materials: mats, nodes: [{ name: 'Root', translation: [0, 0, 0], children }] });
+}
+
+// 6. WEREWOLF (Slate Grey #37474F + Contrasting Silver Ruff & Red Plaid Vest)
+function buildWerewolf() {
+    const mats = [
+        { name: 'CharcoalFur',   baseColorFactor: hex2rgba(0x4B606E), roughness: 0.55, metalness: 0.02, emissiveFactor: [0.03, 0.05, 0.07] }, // 0
+        { name: 'SilverMane',    baseColorFactor: hex2rgba(0xCFD8DC), roughness: 0.50, metalness: 0.02, emissiveFactor: [0.08, 0.09, 0.10] }, // 1
+        { name: 'RedTornVest',   baseColorFactor: hex2rgba(0xE53935), roughness: 0.50, metalness: 0.02, emissiveFactor: [0.10, 0.01, 0.01] }, // 2
+        { name: 'DarkNoseClaw',  baseColorFactor: hex2rgba(0x161B22), roughness: 0.35, metalness: 0.10 }, // 3
+        { name: 'WhiteTeethEye', baseColorFactor: [1.0, 1.0, 1.0, 1], roughness: 0.20, metalness: 0.0, emissiveFactor: [0.15, 0.15, 0.15] }, // 4
+        { name: 'AmberEyeGlow',  baseColorFactor: hex2rgba(0xFFB300), roughness: 0.15, metalness: 0.0, emissiveFactor: [0.75, 0.45, 0.0] }   // 5
+    ];
+
+    // Large cartoon wolf head with big rounded muzzle, cheek tufts & oversized ears
+    const headSkull = buildEllipsoid(1.08, 1.02, 1.02, 16, 16);
+    const muzzleUpper = translateGeo(buildEllipsoid(0.62, 0.44, 0.72, 12, 12), 0, -0.22, 0.85);
+    const muzzleBridge = translateGeo(buildEllipsoid(0.45, 0.36, 0.52, 10, 10), 0, -0.10, 0.82);
+    const noseBall = translateGeo(buildEllipsoid(0.24, 0.18, 0.20, 10, 10), 0, -0.04, 1.48);
+
+    const earL = translateGeo(rotateGeoZ(buildCone(0.36, 0.98, 10), 0.25), -0.72, 0.82, -0.05);
+    const earR = translateGeo(rotateGeoZ(buildCone(0.36, 0.98, 10), -0.25), 0.72, 0.82, -0.05);
+    const innerEarL = translateGeo(rotateGeoZ(buildCone(0.20, 0.68, 8), 0.25), -0.72, 0.82, 0.08);
+    const innerEarR = translateGeo(rotateGeoZ(buildCone(0.20, 0.68, 8), -0.25), 0.72, 0.82, 0.08);
+
+    // Silhouette cheek fur tufts
+    const tuftL1 = translateGeo(rotateGeoZ(buildCone(0.32, 0.72, 8), 1.35), -0.92, -0.18, 0.15);
+    const tuftL2 = translateGeo(rotateGeoZ(buildCone(0.26, 0.58, 8), 1.55), -0.88, -0.45, 0.15);
+    const tuftR1 = translateGeo(rotateGeoZ(buildCone(0.32, 0.72, 8), -1.35), 0.92, -0.18, 0.15);
+    const tuftR2 = translateGeo(rotateGeoZ(buildCone(0.26, 0.58, 8), -1.55), 0.88, -0.45, 0.15);
+
+    const eyes = buildCartoonEyes(0.42, 0.24, 0.88, 0.27, 0.30, 0.26);
+    const fangL = translateGeo(buildCone(0.10, 0.28, 6), -0.28, -0.32, 1.32);
+    const fangR = translateGeo(buildCone(0.10, 0.28, 6), 0.28, -0.32, 1.32);
+
+    // Broad chest with contrasting silver chest fur & red vest
+    const torso = translateGeo(buildEllipsoid(1.12, 1.12, 0.86, 14, 14), 0, 0.92, 0);
+    const chestMane = translateGeo(buildEllipsoid(0.78, 0.72, 0.52, 12, 12), 0, 1.18, 0.55);
+    const vestSideL = translateGeo(buildEllipsoid(0.55, 0.95, 0.82, 10, 10), -0.58, 0.92, 0.08);
+    const vestSideR = translateGeo(buildEllipsoid(0.55, 0.95, 0.82, 10, 10), 0.58, 0.92, 0.08);
+
+    // Fluffy animated tail
+    const tailBase = translateGeo(rotateGeoX(buildEllipsoid(0.36, 0.85, 0.36, 12, 10), -0.85), 0, 0.35, -0.65);
+    const tailTip = translateGeo(rotateGeoX(buildCone(0.38, 0.78, 10), -2.2), 0, 0.75, -1.25);
+
+    const armL = makeCartoonArm(1.48, 0.32, 0.28, 1.20);
+    const armR = makeCartoonArm(1.48, 0.32, 0.28, 1.20);
+    const legL = makeCartoonLeg(1.55, 0.36, 0.28, 1.18);
+    const legR = makeCartoonLeg(1.55, 0.36, 0.28, 1.18);
+
+    const children = [
+        {
+            name: 'Body',
+            translation: [0, 1.55, 0],
+            meshes: [
+                { geo: torso, materialIndex: 0 },
+                { geo: chestMane, materialIndex: 1 },
+                { geo: mergeGeos(vestSideL, vestSideR), materialIndex: 2 }
+            ]
+        },
+        {
+            name: 'Head',
+            translation: [0, 3.65, 0],
+            meshes: [
+                { geo: mergeGeos(headSkull, muzzleBridge, earL, earR), materialIndex: 0 },
+                { geo: mergeGeos(muzzleUpper, innerEarL, innerEarR, tuftL1, tuftL2, tuftR1, tuftR2), materialIndex: 1 },
+                { geo: mergeGeos(noseBall, eyes.brows), materialIndex: 3 },
+                { geo: mergeGeos(eyes.sclera, fangL, fangR), materialIndex: 4 },
+                { geo: eyes.pupils, materialIndex: 5 }
+            ]
+        },
+        {
+            name: 'Arm_L',
+            translation: [-1.18, 3.20, 0],
+            meshes: [
+                { geo: armL.sleeve, materialIndex: 0 },
+                { geo: armL.hand, materialIndex: 1 }
+            ]
+        },
+        {
+            name: 'Arm_R',
+            translation: [1.18, 3.20, 0],
+            meshes: [
+                { geo: armR.sleeve, materialIndex: 0 },
+                { geo: armR.hand, materialIndex: 1 }
+            ]
+        },
+        {
+            name: 'Leg_L',
+            translation: [-0.48, 1.55, 0],
+            meshes: [
+                { geo: legL.leg, materialIndex: 0 },
+                { geo: legL.shoe, materialIndex: 1 }
+            ]
+        },
+        {
+            name: 'Leg_R',
+            translation: [0.48, 1.55, 0],
+            meshes: [
+                { geo: legR.leg, materialIndex: 0 },
+                { geo: legR.shoe, materialIndex: 1 }
+            ]
+        },
+        {
+            name: 'Extra',
+            translation: [0, 1.85, -0.45],
+            meshes: [
+                { geo: tailBase, materialIndex: 0 },
+                { geo: tailTip, materialIndex: 1 }
+            ]
+        }
+    ];
+
+    return buildGLB({ materials: mats, nodes: [{ name: 'Root', translation: [0, 0, 0], children }] });
+}
+
+// 7. SKELETON (Bright Off-White #F3F5F7)
+function buildSkeleton() {
+    const mats = [
+        { name: 'BrightBone',   baseColorFactor: hex2rgba(0xF8FAFC), roughness: 0.38, metalness: 0.05, emissiveFactor: [0.10, 0.11, 0.12] }, // 0
+        { name: 'WarmBoneShad', baseColorFactor: hex2rgba(0xDCE2EA), roughness: 0.50, metalness: 0.02, emissiveFactor: [0.05, 0.05, 0.06] }, // 1
+        { name: 'SocketDark',   baseColorFactor: hex2rgba(0x140E24), roughness: 0.75, metalness: 0.0 }, // 2
+        { name: 'CyanPupilGlow', baseColorFactor: hex2rgba(0x00E5FF), roughness: 0.15, metalness: 0.0, emissiveFactor: [0.15, 0.85, 1.0] }, // 3
+        { name: 'RedBowtie',    baseColorFactor: hex2rgba(0xFF1744), roughness: 0.45, metalness: 0.05, emissiveFactor: [0.12, 0.01, 0.02] } // 4
+    ];
+
+    // Oversized rounded cranium & comical jaw
+    const cranium = translateGeo(buildEllipsoid(1.12, 1.08, 1.06, 18, 18), 0, 0.18, 0);
+    const cheekL = translateGeo(buildEllipsoid(0.42, 0.30, 0.38, 10, 10), -0.68, -0.22, 0.48);
+    const cheekR = translateGeo(buildEllipsoid(0.42, 0.30, 0.38, 10, 10), 0.68, -0.22, 0.48);
+    const jaw = translateGeo(buildRoundedForm(0.76, 0.38, 0.68, 0.65, 12, 12), 0, -0.74, 0.16);
+    const browL = translateGeo(rotateGeoZ(buildEllipsoid(0.38, 0.12, 0.22, 8, 8), -0.18), -0.42, 0.56, 0.88);
+    const browR = translateGeo(rotateGeoZ(buildEllipsoid(0.38, 0.12, 0.22, 8, 8), 0.18), 0.42, 0.56, 0.88);
+
+    // Expressive eye sockets with glowing cyan pinprick pupils
+    const socketL = translateGeo(buildEllipsoid(0.32, 0.34, 0.16, 12, 12), -0.40, 0.16, 0.92);
+    const socketR = translateGeo(buildEllipsoid(0.32, 0.34, 0.16, 12, 12), 0.40, 0.16, 0.92);
+    const noseHole = translateGeo(buildCone(0.16, 0.28, 6), 0, -0.18, 0.98);
+    const pupilL = translateGeo(buildEllipsoid(0.14, 0.14, 0.10, 8, 8), -0.38, 0.16, 1.04);
+    const pupilR = translateGeo(buildEllipsoid(0.14, 0.14, 0.10, 8, 8), 0.38, 0.16, 1.04);
+
+    // Big rounded cartoon teeth
+    const teeth = [];
+    for (let i = -2; i <= 2; i++) {
+        teeth.push(translateGeo(buildEllipsoid(0.11, 0.16, 0.10, 8, 8), i * 0.16, -0.54, 0.84));
+    }
+
+    // Curved ribcage & recognisable pelvis
+    const spine = translateGeo(buildCylinder(0.22, 0.20, 1.85, 10), 0, 0, -0.12);
+    const rib1 = translateGeo(buildEllipsoid(0.95, 0.20, 0.62, 14, 10), 0, 1.42, 0.05);
+    const rib2 = translateGeo(buildEllipsoid(0.88, 0.19, 0.58, 14, 10), 0, 1.05, 0.05);
+    const rib3 = translateGeo(buildEllipsoid(0.76, 0.18, 0.52, 14, 10), 0, 0.68, 0.05);
+    const sternum = translateGeo(buildEllipsoid(0.22, 0.58, 0.18, 10, 10), 0, 1.08, 0.58);
+    const pelvis = translateGeo(buildRoundedForm(0.86, 0.36, 0.62, 0.65, 12, 12), 0, 0.18, 0);
+    const bowtie = translateGeo(buildEllipsoid(0.38, 0.18, 0.14, 8, 8), 0, 1.72, 0.48);
+
+    // Rounded bone limbs with ball joints & oversized skeletal hands/feet
+    function makeBoneArm(len = 1.45) {
+        const jTop = buildEllipsoid(0.24, 0.24, 0.24, 8, 8);
+        const shaft1 = translateGeo(buildCylinder(0.14, 0.16, len * 0.5, 8), 0, -len * 0.5, 0);
+        const jMid = translateGeo(buildEllipsoid(0.22, 0.22, 0.22, 8, 8), 0, -len * 0.5, 0);
+        const shaft2 = translateGeo(buildCylinder(0.14, 0.14, len * 0.5, 8), 0, -len, 0);
+        const hand = translateGeo(buildEllipsoid(0.32, 0.30, 0.26, 10, 10), 0, -len - 0.12, 0.05);
+        return mergeGeos(jTop, shaft1, jMid, shaft2, hand);
+    }
+
+    function makeBoneLeg(len = 1.55) {
+        const jHip = buildEllipsoid(0.26, 0.26, 0.26, 8, 8);
+        const femur = translateGeo(buildCylinder(0.16, 0.18, len * 0.52, 8), 0, -len * 0.52, 0);
+        const knee = translateGeo(buildEllipsoid(0.24, 0.24, 0.24, 8, 8), 0, -len * 0.52, 0);
+        const tibia = translateGeo(buildCylinder(0.15, 0.16, len * 0.42, 8), 0, -len * 0.92, 0);
+        const foot = translateGeo(buildEllipsoid(0.34, 0.22, 0.48, 12, 10), 0, -len + 0.20, 0.22);
+        return mergeGeos(jHip, femur, knee, tibia, foot);
+    }
+
+    const children = [
+        {
+            name: 'Body',
+            translation: [0, 1.55, 0],
+            meshes: [
+                { geo: mergeGeos(rib1, rib2, rib3, sternum), materialIndex: 0 },
+                { geo: mergeGeos(spine, pelvis), materialIndex: 1 },
+                { geo: bowtie, materialIndex: 4 }
+            ]
+        },
+        {
+            name: 'Head',
+            translation: [0, 3.65, 0],
+            meshes: [
+                { geo: mergeGeos(cranium, cheekL, cheekR, browL, browR, ...teeth), materialIndex: 0 },
+                { geo: jaw, materialIndex: 1 },
+                { geo: mergeGeos(socketL, socketR, noseHole), materialIndex: 2 },
+                { geo: mergeGeos(pupilL, pupilR), materialIndex: 3 }
+            ]
+        },
+        {
+            name: 'Arm_L',
+            translation: [-1.08, 3.15, 0],
+            meshes: [{ geo: makeBoneArm(), materialIndex: 0 }]
+        },
+        {
+            name: 'Arm_R',
+            translation: [1.08, 3.15, 0],
+            meshes: [{ geo: makeBoneArm(), materialIndex: 0 }]
+        },
+        {
+            name: 'Leg_L',
+            translation: [-0.44, 1.55, 0],
+            meshes: [{ geo: makeBoneLeg(), materialIndex: 0 }]
+        },
+        {
+            name: 'Leg_R',
+            translation: [0.44, 1.55, 0],
+            meshes: [{ geo: makeBoneLeg(), materialIndex: 0 }]
+        },
+        { name: 'Extra', translation: [0, 0, 0], meshes: [] }
+    ];
+
+    return buildGLB({ materials: mats, nodes: [{ name: 'Root', translation: [0, 0, 0], children }] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAIN – Generate all 8 monsters
+// GENERATE ALL 8 MONSTERS
 // ─────────────────────────────────────────────────────────────────────────────
-
 const MONSTERS = [
-    { id: 0, name: 'vampire',        fn: buildVampire       },
-    { id: 1, name: 'pumpkin-fiend',  fn: buildPumpkinFiend  },
-    { id: 2, name: 'cursed-mummy',   fn: buildCursedMummy   },
-    { id: 3, name: 'franken-zombie', fn: buildFrankenZombie },
+    { id: 0, name: 'vampire',          fn: buildVampire },
+    { id: 1, name: 'pumpkin-fiend',    fn: buildPumpkinFiend },
+    { id: 2, name: 'cursed-mummy',     fn: buildCursedMummy },
+    { id: 3, name: 'franken-zombie',   fn: buildFrankenZombie },
     { id: 4, name: 'spectral-banshee', fn: buildSpectralBanshee },
-    { id: 5, name: 'witch-imp',      fn: buildWitchImp      },
-    { id: 6, name: 'werewolf',       fn: buildWerewolf      },
-    { id: 7, name: 'skeleton',       fn: buildSkeleton      }
+    { id: 5, name: 'witch-imp',        fn: buildWitchImp },
+    { id: 6, name: 'werewolf',         fn: buildWerewolf },
+    { id: 7, name: 'skeleton',         fn: buildSkeleton }
 ];
 
-console.log('Zoombie Monster GLB Generator');
-console.log('==============================');
-let totalTriangles = 0;
+console.log('Zoombie Monster GLB Generator v2');
+console.log('================================');
 let totalBytes = 0;
 
 for (const { id, name, fn } of MONSTERS) {
-    process.stdout.write(`[${id}] Generating ${name}... `);
-    try {
-        const glb = fn();
-        const outPath = resolve(OUT_DIR, `${name}.glb`);
-        writeFileSync(outPath, glb);
-        const triCount = Math.round(glb.length / 60); // rough estimate
-        totalTriangles += triCount;
-        totalBytes += glb.length;
-        console.log(`✓  ${(glb.length / 1024).toFixed(1)} KB`);
-    } catch (err) {
-        console.error(`✗  FAILED: ${err.message}`);
-        console.error(err.stack);
-    }
+    process.stdout.write(`[${id}] Generating ${name}.glb... `);
+    const glb = fn();
+    const outPath = resolve(OUT_DIR, `${name}.glb`);
+    writeFileSync(outPath, glb);
+    totalBytes += glb.length;
+    console.log(`✓  ${(glb.length / 1024).toFixed(1)} KB`);
 }
 
-console.log('');
-console.log(`Done. Total output: ${(totalBytes / 1024).toFixed(0)} KB`);
-console.log(`Output directory: ${OUT_DIR}`);
+console.log(`\nCompleted all 8 GLBs (${(totalBytes / 1024).toFixed(1)} KB total) -> ${OUT_DIR}`);

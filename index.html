@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoombie Racing Simulator</title>
+    
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Rajdhani:wght@500;600;700&family=Roboto+Condensed:wght@400;700&display=swap" rel="stylesheet">
+
+    <link rel="apple-touch-icon" sizes="180x180" href="images/icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="images/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="images/icons/favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="images/icons/android-chrome-192x192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="images/icons/android-chrome-512x512.png">
+    <link rel="shortcut icon" href="images/icons/favicon.ico">
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+    
+    <canvas id="fireworks-canvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="broadcast-header">
+            <div class="live-tag"><div class="red-dot"></div> LIVE</div>
+            <div class="event-title">
+                <img src="images/logo/logo-white.svg" class="channel-logo" alt="PPSC TV">
+                <span class="race-name" id="header-race-name">HAUNTED HIGHWAY GP</span>
+            </div>
+        </div>
+        
+        <div id="leaderboard">
+            <div class="lb-title">POSITIONS</div>
+            <div id="lb-content"></div>
+        </div>
+
+        <div id="telemetry-bar">
+            <div class="telemetry-label">TRACK COMPLETION</div>
+            <div class="telemetry-track"><div id="progress-fill"></div></div>
+            <div class="telemetry-stat">LEADER SPEED: <span id="speed-stat">0</span> KM/H</div>
+        </div>
+    </div>
+
+    <div id="start-screen">
+        <div class="slate-container">
+            <h1>ZOOMBIE RACING</h1>
+            
+            <div class="control-group">
+                <select id="race-select"></select>
+            </div>
+
+            <div class="preview-box">
+                <div id="duck-preview" class="preview-grid"></div>
+            </div>
+
+            <div class="button-row">
+                <button id="about-btn" class="secondary-btn">ABOUT</button>
+                <button id="manage-btn" class="secondary-btn">MANAGE</button>
+                <button id="start-btn">RACE!</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="config-modal" class="hidden">
+        <div class="modal-content">
+            <h2>CREATE NEW EVENT</h2>
+            <div class="input-grid">
+                <div class="inp-group"><label>#1 RED (VAMPIRE)</label><input type="text" id="p-name-0" placeholder="Zoombie Name"></div>
+                <div class="inp-group"><label>#2 ORANGE (PUMPKIN)</label><input type="text" id="p-name-1" placeholder="Zoombie Name"></div>
+                <div class="inp-group"><label>#3 YELLOW (MUMMY)</label><input type="text" id="p-name-2" placeholder="Zoombie Name"></div>
+                <div class="inp-group"><label>#4 GREEN (ZOMBIE)</label><input type="text" id="p-name-3" placeholder="Zoombie Name"></div>
+                <div class="inp-group"><label>#5 BLUE (BANSHEE)</label><input type="text" id="p-name-4" placeholder="Zoombie Name"></div>
+                <div class="inp-group"><label>#6 PURPLE (WITCH)</label><input type="text" id="p-name-5" placeholder="Zoombie Name"></div>
+                <div class="inp-group"><label>#7 GREY (WEREWOLF)</label><input type="text" id="p-name-6" placeholder="Zoombie Name"></div>
+                <div class="inp-group"><label>#8 WHITE (SKELETON)</label><input type="text" id="p-name-7" placeholder="Zoombie Name"></div>
+            </div>
+            <div class="inp-group full-width">
+                <label>EVENT NAME</label>
+                <input type="text" id="new-race-name" placeholder="e.g. All Hallows Final">
+            </div>
+            <div class="modal-buttons">
+                <button id="cancel-config-btn" class="secondary-btn">CANCEL</button>
+                <button id="save-config-btn">SAVE EVENT</button>
+            </div>
+            <div class="reset-link" id="reset-data-btn">Reset all data to defaults</div>
+        </div>
+    </div>
+
+    <div id="about-modal" class="hidden">
+        <div class="modal-content">
+            <h2>ABOUT</h2>
+            <div id="about-content-container" class="about-text"></div>
+            <div class="modal-buttons">
+                <button id="close-about-btn">CLOSE</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="end-screen" class="hidden">
+        <div class="winner-slate">
+            <div class="finish-flag">OFFICIAL RESULTS</div>
+            <div id="winner-text">WINNER: ZOOMBIE #1</div>
+            <button id="restart-btn">NEXT RACE</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+    <script src="data.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>

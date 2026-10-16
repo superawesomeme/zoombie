@@ -1,0 +1,13 @@
+{
+  "name": "zoombie-glb-generator",
+  "version": "1.0.0",
+  "description": "Generates the 8 Zoombie Racing Simulator monster GLB files",
+  "type": "module",
+  "scripts": {
+    "generate": "node generate-monsters.mjs"
+  },
+  "dependencies": {
+    "three": "^0.128.0",
+    "node-canvas": "^2.11.2"
+  }
+}

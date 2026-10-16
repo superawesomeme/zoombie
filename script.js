@@ -174,36 +174,23 @@ function loadAboutInfo() {
 }
 
 /**
- * THREE.JS SCENE & BRIGHT HALLOWEEN NIGHT LIGHTING SETUP
+ * THREE.JS SCENE & ATMOSPHERIC NIGHT LIGHTING SETUP
  */
 const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
 
-const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.5, 2500);
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.outputEncoding = THREE.sRGBEncoding;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.22;
-container.appendChild(renderer.domElement);
+// Transparent background so the CSS purple/navy gradient sky shows through cleanly
+scene.background = null;
+scene.fog = new THREE.FogExp2(0x130b24, 0.0028);
 
-// --- VIBRANT HALLOWEEN NIGHT SKY & PURPLE-INDIGO FOG ---
-const SKY_COLOR = 0x160b2e;
-scene.background = new THREE.Color(SKY_COLOR);
-scene.fog = new THREE.FogExp2(0x1b0e38, 0.0026);
-
-// --- LIGHTING ---
-const ambientLight = new THREE.AmbientLight(0x4c3778, 0.65);
+// --- BALANCED TONE-DOWN LIGHTING ---
+const ambientLight = new THREE.AmbientLight(0x352652, 0.45);
 scene.add(ambientLight);
 
-const hemiLight = new THREE.HemisphereLight(0xa4c8ff, 0x3b1f5e, 1.15);
+const hemiLight = new THREE.HemisphereLight(0x7da2ff, 0x24123b, 0.75);
 scene.add(hemiLight);
 
-// Bright silvery-blue moonlight with dynamic shadow frustum that follows the pack
-const moonLight = new THREE.DirectionalLight(0xdceeff, 1.35);
+const moonLight = new THREE.DirectionalLight(0xbcd4ff, 0.95);
 moonLight.position.set(45, 95, 60);
 moonLight.castShadow = true;
 moonLight.shadow.mapSize.width = 2048;
@@ -218,13 +205,12 @@ moonLight.shadow.bias = -0.0005;
 scene.add(moonLight);
 scene.add(moonLight.target);
 
-// Warm front/fill light & cool rim light that track the pack (non-shadow casting for high performance)
-const packFillLight = new THREE.DirectionalLight(0xffb76b, 0.78);
+const packFillLight = new THREE.DirectionalLight(0xff9e42, 0.52);
 packFillLight.position.set(-18, 28, 35);
 scene.add(packFillLight);
 scene.add(packFillLight.target);
 
-const packRimLight = new THREE.DirectionalLight(0x80d8ff, 0.55);
+const packRimLight = new THREE.DirectionalLight(0x64b5f6, 0.38);
 packRimLight.position.set(0, 32, -45);
 scene.add(packRimLight);
 scene.add(packRimLight.target);
@@ -232,7 +218,7 @@ scene.add(packRimLight.target);
 const textureLoader = new THREE.TextureLoader();
 
 /**
- * PROCEDURAL TEXTURES (High-contrast readable road & stonework)
+ * PROCEDURAL TEXTURES
  */
 function createRoadTexture() {
     const cvs = document.createElement('canvas');
@@ -240,63 +226,41 @@ function createRoadTexture() {
     cvs.height = 512;
     const ctx = cvs.getContext('2d');
 
-    // Deep indigo-slate cartoon tarmac for strong monster separation
-    ctx.fillStyle = '#262338';
+    ctx.fillStyle = '#1e1b29';
     ctx.fillRect(0, 0, 512, 512);
 
-    // Subtle stylised road texture
     for (let i = 0; i < 6500; i++) {
         const x = Math.random() * 512;
         const y = Math.random() * 512;
-        const v = 34 + Math.floor(Math.random() * 24);
-        ctx.fillStyle = `rgb(${v}, ${v - 2}, ${v + 14})`;
+        const v = 26 + Math.floor(Math.random() * 20);
+        ctx.fillStyle = `rgb(${v}, ${v - 2}, ${v + 10})`;
         ctx.fillRect(x, y, 2, 2);
     }
 
-    // Mossy/purple-tinted shoulders + bright orange edge stripes
     const leftGrad = ctx.createLinearGradient(0, 0, 55, 0);
-    leftGrad.addColorStop(0, '#273824');
-    leftGrad.addColorStop(1, 'rgba(38, 35, 56, 0)');
+    leftGrad.addColorStop(0, '#1c281a');
+    leftGrad.addColorStop(1, 'rgba(30, 27, 41, 0)');
     ctx.fillStyle = leftGrad;
     ctx.fillRect(0, 0, 55, 512);
 
     const rightGrad = ctx.createLinearGradient(512, 0, 457, 0);
-    rightGrad.addColorStop(0, '#273824');
-    rightGrad.addColorStop(1, 'rgba(38, 35, 56, 0)');
+    rightGrad.addColorStop(0, '#1c281a');
+    rightGrad.addColorStop(1, 'rgba(30, 27, 41, 0)');
     ctx.fillStyle = rightGrad;
     ctx.fillRect(457, 0, 55, 512);
 
-    // Bright Halloween orange road edge lines
-    ctx.fillStyle = 'rgba(255, 138, 0, 0.72)';
+    ctx.fillStyle = 'rgba(255, 120, 0, 0.65)';
     ctx.fillRect(18, 0, 6, 512);
     ctx.fillRect(488, 0, 6, 512);
 
-    // Warm double amber centre lines
-    ctx.fillStyle = 'rgba(255, 183, 77, 0.65)';
+    ctx.fillStyle = 'rgba(235, 170, 70, 0.55)';
     ctx.fillRect(249, 0, 4, 512);
     ctx.fillRect(259, 0, 4, 512);
 
-    // Clear lane dividers
-    ctx.fillStyle = 'rgba(215, 210, 240, 0.35)';
+    ctx.fillStyle = 'rgba(195, 190, 220, 0.28)';
     for (let y = 0; y < 512; y += 64) {
         ctx.fillRect(134, y, 4, 34);
         ctx.fillRect(374, y, 4, 34);
-    }
-
-    // Stylised cracks
-    ctx.strokeStyle = '#151221';
-    ctx.lineWidth = 2;
-    for (let c = 0; c < 14; c++) {
-        ctx.beginPath();
-        let cx = 40 + Math.random() * 430;
-        let cy = Math.random() * 512;
-        ctx.moveTo(cx, cy);
-        for (let s = 0; s < 5; s++) {
-            cx += (Math.random() - 0.5) * 35;
-            cy += (Math.random() - 0.5) * 35;
-            ctx.lineTo(cx, cy);
-        }
-        ctx.stroke();
     }
 
     const tex = new THREE.CanvasTexture(cvs);
@@ -311,10 +275,10 @@ function createCryptStoneTexture() {
     cvs.width = 128;
     cvs.height = 128;
     const ctx = cvs.getContext('2d');
-    ctx.fillStyle = '#4e4663';
+    ctx.fillStyle = '#3d364d';
     ctx.fillRect(0, 0, 128, 128);
     for (let i = 0; i < 800; i++) {
-        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.14)';
+        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.12)';
         ctx.fillRect(Math.random() * 128, Math.random() * 128, 3, 3);
     }
     const tex = new THREE.CanvasTexture(cvs);
@@ -332,12 +296,11 @@ const stoneTex = createCryptStoneTexture();
 const landscapeGroup = new THREE.Group();
 scene.add(landscapeGroup);
 
-// 1. Haunted Road
 const roadLength = CONFIG.raceDistance + 1200;
 const roadGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, roadLength);
 const roadMat = new THREE.MeshStandardMaterial({
     map: roadTex,
-    roughness: 0.80,
+    roughness: 0.82,
     metalness: 0.05
 });
 const roadMesh = new THREE.Mesh(roadGeo, roadMat);
@@ -346,9 +309,8 @@ roadMesh.position.set(0, 0, CONFIG.raceDistance / 2);
 roadMesh.receiveShadow = true;
 landscapeGroup.add(roadMesh);
 
-// 2. Raised Stone Kerbs & Haunted Verges
 const kerbGeo = new THREE.BoxGeometry(2.5, 0.9, roadLength);
-const kerbMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x7e7396, roughness: 0.85 });
+const kerbMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x655c7a, roughness: 0.85 });
 
 const leftKerb = new THREE.Mesh(kerbGeo, kerbMat);
 leftKerb.position.set(-(CONFIG.roadWidth / 2) - 1.25, 0.45, CONFIG.raceDistance / 2);
@@ -361,7 +323,7 @@ rightKerb.receiveShadow = true;
 landscapeGroup.add(rightKerb);
 
 const vergeGeo = new THREE.BoxGeometry(340, 20, roadLength);
-const vergeMat = new THREE.MeshStandardMaterial({ color: 0x1e2c22, roughness: 0.92 });
+const vergeMat = new THREE.MeshStandardMaterial({ color: 0x162219, roughness: 0.92 });
 
 const leftVerge = new THREE.Mesh(vergeGeo, vergeMat);
 leftVerge.position.set(-208, -9.8, CONFIG.raceDistance / 2);
@@ -373,10 +335,10 @@ rightVerge.position.set(208, -9.8, CONFIG.raceDistance / 2);
 rightVerge.receiveShadow = true;
 landscapeGroup.add(rightVerge);
 
-// 3. Full Moon & Starfield
+// Full Moon & Starfield
 const moonGroup = new THREE.Group();
 const moonGeo = new THREE.SphereGeometry(58, 32, 32);
-const moonMat = new THREE.MeshBasicMaterial({ color: 0xfff5d6, fog: false });
+const moonMat = new THREE.MeshBasicMaterial({ color: 0xfff3d1, fog: false });
 const moonMesh = new THREE.Mesh(moonGeo, moonMat);
 moonGroup.add(moonMesh);
 
@@ -384,9 +346,9 @@ const haloCanvas = document.createElement('canvas');
 haloCanvas.width = 128; haloCanvas.height = 128;
 const hCtx = haloCanvas.getContext('2d');
 const hGrad = hCtx.createRadialGradient(64, 64, 10, 64, 64, 64);
-hGrad.addColorStop(0, 'rgba(255, 240, 190, 0.65)');
-hGrad.addColorStop(0.5, 'rgba(255, 160, 60, 0.25)');
-hGrad.addColorStop(1, 'rgba(180, 100, 255, 0)');
+hGrad.addColorStop(0, 'rgba(255, 230, 170, 0.55)');
+hGrad.addColorStop(0.5, 'rgba(200, 130, 60, 0.20)');
+hGrad.addColorStop(1, 'rgba(140, 70, 220, 0)');
 hCtx.fillStyle = hGrad;
 hCtx.fillRect(0, 0, 128, 128);
 const haloSprite = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -394,12 +356,11 @@ const haloSprite = new THREE.Sprite(new THREE.SpriteMaterial({
     blending: THREE.AdditiveBlending,
     fog: false
 }));
-haloSprite.scale.set(290, 290, 1);
+haloSprite.scale.set(280, 280, 1);
 moonGroup.add(haloSprite);
 moonGroup.position.set(80, 210, CONFIG.raceDistance + 550);
 scene.add(moonGroup);
 
-// Stars
 const starCount = 450;
 const starPositions = new Float32Array(starCount * 3);
 for (let i = 0; i < starCount; i++) {
@@ -409,10 +370,9 @@ for (let i = 0; i < starCount; i++) {
 }
 const starGeo = new THREE.BufferGeometry();
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2.4, fog: false });
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, fog: false });
 scene.add(new THREE.Points(starGeo, starMat));
 
-// 4. Instanced Spooky Dead Trees
 function buildInstancedSpookyTrees() {
     const treePlacements = [];
     for (let z = -320; z < CONFIG.raceDistance + 280; z += 14) {
@@ -435,7 +395,7 @@ function buildInstancedSpookyTrees() {
     }
 
     const count = treePlacements.length;
-    const barkMat = new THREE.MeshStandardMaterial({ color: 0x352438, roughness: 0.90, flatShading: true });
+    const barkMat = new THREE.MeshStandardMaterial({ color: 0x2a1d2e, roughness: 0.90, flatShading: true });
     const trunkGeo = new THREE.CylinderGeometry(0.6, 1.8, 10, 6);
     const branchGeo = new THREE.ConeGeometry(0.65, 6.5, 5);
 
@@ -481,7 +441,6 @@ function buildInstancedSpookyTrees() {
 }
 buildInstancedSpookyTrees();
 
-// 5. Instanced Roadside Gravestones
 function buildInstancedGravestones() {
     const graves = [];
     for (let z = -150; z < CONFIG.raceDistance + 150; z += 18) {
@@ -493,7 +452,7 @@ function buildInstancedGravestones() {
         }
     }
     const graveGeo = new THREE.BoxGeometry(2.2, 3.6, 0.6);
-    const graveMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x6f6687, roughness: 0.85 });
+    const graveMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x5a526e, roughness: 0.85 });
     const graveInst = new THREE.InstancedMesh(graveGeo, graveMat, graves.length);
     graveInst.castShadow = true;
     graveInst.receiveShadow = true;
@@ -510,7 +469,6 @@ function buildInstancedGravestones() {
 }
 buildInstancedGravestones();
 
-// 6. Track Sidings (Preserving all sponsor images)
 function createTrackSiding(imagePath, x, z, side) {
     const group = new THREE.Group();
     const length = 55, height = 10, depth = 2;
@@ -518,7 +476,7 @@ function createTrackSiding(imagePath, x, z, side) {
     const baseMat = new THREE.MeshStandardMaterial({
         map: stoneTex,
         roughness: 0.88,
-        color: 0x6e6380
+        color: 0x584e68
     });
 
     const base = new THREE.Mesh(baseGeo, baseMat);
@@ -555,17 +513,16 @@ for (let z = 0; z <= CONFIG.raceDistance; z += sidingInterval) {
     landscapeGroup.add(createTrackSiding(img2, 85, z, 1));
 }
 
-// 7. Bright Roadside Jack-o'-Lanterns & Spectral Lantern Accents
 const pumpkinOuterMat = new THREE.MeshStandardMaterial({
-    color: 0xff6d00,
+    color: 0xe65100,
     roughness: 0.45,
-    emissive: 0x4a1800,
-    emissiveIntensity: 0.45
+    emissive: 0x3d1400,
+    emissiveIntensity: 0.35
 });
 const pumpkinGlowMat = new THREE.MeshStandardMaterial({
-    color: 0xfff176,
-    emissive: 0xff9100,
-    emissiveIntensity: 1.0
+    color: 0xffea00,
+    emissive: 0xff6d00,
+    emissiveIntensity: 0.85
 });
 
 function buildRoadsidePumpkins() {
@@ -596,15 +553,14 @@ function buildRoadsidePumpkins() {
 }
 buildRoadsidePumpkins();
 
-// 8. Start & Finish Line Gothic Archway
 const finishGroup = new THREE.Group();
 const checkCanvas = document.createElement('canvas');
 checkCanvas.width = 576;
 checkCanvas.height = 64;
 const checkCtx = checkCanvas.getContext('2d');
-checkCtx.fillStyle = '#180d28';
+checkCtx.fillStyle = '#140a20';
 checkCtx.fillRect(0, 0, 576, 64);
-checkCtx.fillStyle = '#ff8000';
+checkCtx.fillStyle = '#ff7300';
 for (let y = 0; y < 2; y++) {
     for (let x = 0; x < 18; x++) {
         if ((x + y) % 2 === 0) checkCtx.fillRect(x * 32, y * 32, 32, 32);
@@ -615,12 +571,12 @@ checkTex.magFilter = THREE.NearestFilter;
 
 const fBanner = new THREE.Mesh(
     new THREE.BoxGeometry(74, 7, 2),
-    new THREE.MeshStandardMaterial({ map: checkTex, roughness: 0.6, emissive: 0x261000 })
+    new THREE.MeshStandardMaterial({ map: checkTex, roughness: 0.6, emissive: 0x1f0d00 })
 );
 fBanner.position.set(0, 21, CONFIG.raceDistance);
 fBanner.castShadow = true;
 
-const pillarMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x5c4f70, roughness: 0.85 });
+const pillarMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x4a3f5c, roughness: 0.85 });
 const p1 = new THREE.Mesh(new THREE.BoxGeometry(3.5, 25, 3.5), pillarMat);
 p1.position.set(-36, 12.5, CONFIG.raceDistance);
 p1.castShadow = true;
@@ -630,9 +586,8 @@ p2.position.set(36, 12.5, CONFIG.raceDistance);
 finishGroup.add(p1, p2, fBanner);
 scene.add(finishGroup);
 
-// Road Start & Finish Paint Strips
 const lineStripGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, 3.5);
-const startLineMat = new THREE.MeshBasicMaterial({ map: checkTex, transparent: true, opacity: 0.92 });
+const startLineMat = new THREE.MeshBasicMaterial({ map: checkTex, transparent: true, opacity: 0.90 });
 const startLineStrip = new THREE.Mesh(lineStripGeo, startLineMat);
 startLineStrip.rotation.x = -Math.PI / 2;
 startLineStrip.position.set(0, 0.04, 0);
@@ -643,7 +598,7 @@ finishLineStrip.position.set(0, 0.04, CONFIG.raceDistance);
 scene.add(finishLineStrip);
 
 /**
- * OBJECT-POOLED FOOTSTEP DUST / ECTO-MIST SYSTEM
+ * OBJECT-POOLED FOOTSTEP MIST
  */
 const mistGroup = new THREE.Group();
 scene.add(mistGroup);
@@ -653,9 +608,9 @@ mistCanvas.width = 64;
 mistCanvas.height = 64;
 const mistCtx = mistCanvas.getContext('2d');
 const mistGrad = mistCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
-mistGrad.addColorStop(0, 'rgba(195, 175, 230, 0.58)');
-mistGrad.addColorStop(0.5, 'rgba(120, 255, 90, 0.25)');
-mistGrad.addColorStop(1, 'rgba(60, 20, 90, 0)');
+mistGrad.addColorStop(0, 'rgba(175, 155, 215, 0.52)');
+mistGrad.addColorStop(0.5, 'rgba(100, 240, 80, 0.20)');
+mistGrad.addColorStop(1, 'rgba(50, 15, 75, 0)');
 mistCtx.fillStyle = mistGrad;
 mistCtx.fillRect(0, 0, 64, 64);
 const mistTex = new THREE.CanvasTexture(mistCanvas);
@@ -688,7 +643,7 @@ function spawnFootstepMist(x, z, scale) {
     item.baseScale = scale;
     item.mesh.position.set(x, 0.12, z);
     item.mesh.scale.set(scale, scale, 1);
-    item.mesh.material.opacity = 0.65;
+    item.mesh.material.opacity = 0.58;
     item.mesh.visible = true;
 }
 
@@ -703,7 +658,7 @@ function updateFootstepMist(delta) {
         } else {
             const s = item.baseScale + item.age * 2.8;
             item.mesh.scale.set(s, s, 1);
-            item.mesh.material.opacity = 0.65 * (1 - item.age / 0.85);
+            item.mesh.material.opacity = 0.58 * (1 - item.age / 0.85);
         }
     }
 }
@@ -713,165 +668,6 @@ function resetFootstepMist() {
         mistPool[i].active = false;
         mistPool[i].mesh.visible = false;
     }
-}
-
-/**
- * SHARED GEOMETRIES FOR PROCEDURAL FALLBACK RACERS
- */
-const SHARED_GEO = {
-    torso: new THREE.SphereGeometry(1.0, 14, 12),
-    headSphere: new THREE.SphereGeometry(1.12, 16, 14),
-    limb: new THREE.CylinderGeometry(0.24, 0.20, 1.55, 10),
-    thinBone: new THREE.CylinderGeometry(0.16, 0.14, 1.55, 8),
-    eye: new THREE.SphereGeometry(0.22, 10, 10),
-    pupil: new THREE.SphereGeometry(0.11, 8, 8),
-    horn: new THREE.ConeGeometry(0.28, 0.9, 8),
-    ear: new THREE.ConeGeometry(0.32, 0.85, 8),
-    witchHatBrim: new THREE.CylinderGeometry(1.6, 1.6, 0.14, 14),
-    witchHatCone: new THREE.ConeGeometry(0.95, 1.95, 12),
-    cape: new THREE.PlaneGeometry(2.1, 2.4),
-    bolt: new THREE.CylinderGeometry(0.16, 0.16, 2.2, 8),
-    snout: new THREE.SphereGeometry(0.55, 10, 10),
-    rib: new THREE.BoxGeometry(1.55, 0.22, 0.85)
-};
-
-SHARED_GEO.limb.translate(0, -0.7, 0);
-SHARED_GEO.thinBone.translate(0, -0.7, 0);
-SHARED_GEO.cape.translate(0, -1.1, 0);
-
-const loader = new THREE.GLTFLoader();
-const dracoLoader = new THREE.DRACOLoader();
-dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
-loader.setDRACOLoader(dracoLoader);
-
-/**
- * MONSTER MODEL MANAGER
- * Preloads all 8 GLBs and scales them consistently for strong visual presence.
- */
-const MONSTER_MANIFEST = [
-    { id: 0, name: 'vampire',          file: 'models/vampire.glb',          scale: CONFIG.racerScale, yOffset: 0 },
-    { id: 1, name: 'pumpkin-fiend',    file: 'models/pumpkin-fiend.glb',    scale: CONFIG.racerScale, yOffset: 0 },
-    { id: 2, name: 'cursed-mummy',     file: 'models/cursed-mummy.glb',     scale: CONFIG.racerScale, yOffset: 0 },
-    { id: 3, name: 'franken-zombie',   file: 'models/franken-zombie.glb',   scale: CONFIG.racerScale, yOffset: 0 },
-    { id: 4, name: 'spectral-banshee', file: 'models/spectral-banshee.glb', scale: CONFIG.racerScale, yOffset: 0.35 },
-    { id: 5, name: 'witch-imp',        file: 'models/witch-imp.glb',        scale: CONFIG.racerScale, yOffset: 0 },
-    { id: 6, name: 'werewolf',         file: 'models/werewolf.glb',         scale: CONFIG.racerScale, yOffset: 0 },
-    { id: 7, name: 'skeleton',         file: 'models/skeleton.glb',         scale: CONFIG.racerScale, yOffset: 0 }
-];
-
-const MonsterModelManager = {
-    _cache: new Array(8).fill(null),
-    _failed: new Array(8).fill(false),
-    ready: false,
-
-    preloadAll() {
-        const startBtn = document.getElementById('start-btn');
-        const loadingMsg = document.createElement('div');
-        loadingMsg.id = 'loading-msg';
-        loadingMsg.textContent = 'Loading racers… 0/8';
-        loadingMsg.style.cssText = 'margin-top:10px;font-size:0.85rem;color:#aaa;letter-spacing:1px;';
-
-        const btnParent = startBtn?.parentNode;
-        if (btnParent) btnParent.insertBefore(loadingMsg, startBtn);
-        if (startBtn) { startBtn.disabled = true; startBtn.style.cursor = 'not-allowed'; }
-
-        let loadedCount = 0;
-
-        const promises = MONSTER_MANIFEST.map(entry => new Promise((resolve) => {
-            loader.load(
-                entry.file,
-                (gltf) => {
-                    this._cache[entry.id] = gltf.scene;
-                    gltf.scene.traverse(child => {
-                        if (child.isMesh) {
-                            child.castShadow = true;
-                            child.receiveShadow = true;
-                        }
-                    });
-                    loadedCount++;
-                    if (loadingMsg) loadingMsg.textContent = `Loading racers… ${loadedCount}/8`;
-                    resolve();
-                },
-                undefined,
-                (err) => {
-                    console.warn(`[MonsterModelManager] Failed to load ${entry.file}:`, err);
-                    this._failed[entry.id] = true;
-                    loadedCount++;
-                    if (loadingMsg) loadingMsg.textContent = `Loading racers… ${loadedCount}/8`;
-                    resolve();
-                }
-            );
-        }));
-
-        return Promise.all(promises).then(() => {
-            this.ready = true;
-            if (loadingMsg) loadingMsg.remove();
-            const failedNames = MONSTER_MANIFEST.filter(e => this._failed[e.id]).map(e => e.name);
-            if (failedNames.length > 0) {
-                const errEl = document.createElement('div');
-                errEl.style.cssText = 'margin-top:8px;font-size:0.8rem;color:#ff6d00;';
-                errEl.textContent = `Using fallback for: ${failedNames.join(', ')}`;
-                if (btnParent && startBtn) btnParent.insertBefore(errEl, startBtn);
-            }
-            activateStartButton();
-        });
-    },
-
-    cloneFor(monsterId) {
-        const source = this._cache[monsterId];
-        if (!source) return null;
-
-        const entry = MONSTER_MANIFEST[monsterId];
-        const clone = source.clone(true);
-        clone.scale.setScalar(entry.scale);
-        clone.position.y = entry.yOffset;
-
-        const rig = {};
-        clone.traverse(child => {
-            switch (child.name) {
-                case 'Body':  rig.bodyGroup = child; break;
-                case 'Head':  rig.headGroup = child; break;
-                case 'Arm_L': rig.leftArm   = child; break;
-                case 'Arm_R': rig.rightArm  = child; break;
-                case 'Leg_L': rig.leftLeg   = child; break;
-                case 'Leg_R': rig.rightLeg  = child; break;
-                case 'Extra': rig.extra     = child; break;
-            }
-        });
-
-        return { group: clone, rig };
-    },
-
-    disposeCache() {
-        for (let i = 0; i < 8; i++) {
-            if (this._cache[i]) {
-                this._cache[i].traverse(child => {
-                    if (child.isMesh) {
-                        child.geometry?.dispose();
-                        if (Array.isArray(child.material)) {
-                            child.material.forEach(m => m.dispose());
-                        } else {
-                            child.material?.dispose();
-                        }
-                    }
-                });
-                this._cache[i] = null;
-            }
-            this._failed[i] = false;
-        }
-        this.ready = false;
-    }
-};
-
-MonsterModelManager.preloadAll();
-
-function activateStartButton() {
-    const btn = document.getElementById('start-btn');
-    if (btn) {
-        btn.disabled = false;
-        btn.style.cursor = 'pointer';
-    }
-    initDucks();
 }
 
 /**
@@ -917,11 +713,8 @@ class Zoombie {
             if (glbResult.rig.leftLeg)   this.rig.leftLeg   = glbResult.rig.leftLeg;
             if (glbResult.rig.rightLeg)  this.rig.rightLeg  = glbResult.rig.rightLeg;
             if (glbResult.rig.extra)     this.rig.extra     = glbResult.rig.extra;
-        } else {
-            this.buildProceduralMonsterModel();
         }
 
-        // Capture base transforms of rig nodes so ready/running poses never drift
         this.baseRig = {
             bodyY: this.rig.bodyGroup.position.y,
             headY: this.rig.headGroup.position.y,
@@ -964,7 +757,7 @@ class Zoombie {
 
         ctx.beginPath();
         ctx.moveTo(30, 0); ctx.lineTo(w, 0); ctx.lineTo(w - 30, h); ctx.lineTo(0, h);
-        ctx.fillStyle = "rgba(18, 10, 32, 0.92)";
+        ctx.fillStyle = "rgba(14, 8, 25, 0.92)";
         ctx.fill();
 
         ctx.beginPath();
@@ -983,7 +776,6 @@ class Zoombie {
         const sprite = new THREE.Sprite(
             new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cvs), depthWrite: false, depthTest: true })
         );
-        // Positioned cleanly above enlarged monster heads and hats
         sprite.position.set(0, 9.6, 0);
         sprite.scale.set(3.8, 3.0, 1);
         sprite.frustumCulled = false;
@@ -991,84 +783,6 @@ class Zoombie {
         this.mesh.add(sprite);
     }
 
-    buildProceduralMonsterModel() {
-        const primaryMat = new THREE.MeshStandardMaterial({
-            color: this.color,
-            roughness: 0.42,
-            metalness: 0.08
-        });
-        const darkSuitMat = new THREE.MeshStandardMaterial({
-            color: 0x261b3d,
-            roughness: 0.65
-        });
-        const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        const pupilMat = new THREE.MeshBasicMaterial({ color: 0x120a1f });
-
-        const { bodyGroup, headGroup, leftArm, rightArm, leftLeg, rightLeg } = this.rig;
-        bodyGroup.position.y = 1.65;
-        leftLeg.position.set(-0.48, 1.55, 0);
-        rightLeg.position.set(0.48, 1.55, 0);
-        leftArm.position.set(-1.15, 3.25, 0);
-        rightArm.position.set(1.15, 3.25, 0);
-        headGroup.position.set(0, 3.65, 0);
-
-        const limbGeo = (this.id === 7) ? SHARED_GEO.thinBone : SHARED_GEO.limb;
-
-        const lLegMesh = new THREE.Mesh(limbGeo, this.id === 7 ? primaryMat : darkSuitMat);
-        const rLegMesh = new THREE.Mesh(limbGeo, this.id === 7 ? primaryMat : darkSuitMat);
-        const lArmMesh = new THREE.Mesh(limbGeo, primaryMat);
-        const rArmMesh = new THREE.Mesh(limbGeo, primaryMat);
-
-        lLegMesh.castShadow = true; rLegMesh.castShadow = true;
-        lArmMesh.castShadow = true; rArmMesh.castShadow = true;
-
-        leftLeg.add(lLegMesh); rightLeg.add(rLegMesh);
-        leftArm.add(lArmMesh); rightArm.add(rArmMesh);
-
-        const torsoMesh = new THREE.Mesh(SHARED_GEO.torso, primaryMat);
-        torsoMesh.scale.set(1.05, 1.15, 0.85);
-        torsoMesh.position.y = 0.85;
-        torsoMesh.castShadow = true;
-        bodyGroup.add(torsoMesh);
-
-        const headMesh = new THREE.Mesh(SHARED_GEO.headSphere, primaryMat);
-        headMesh.castShadow = true;
-        headGroup.add(headMesh);
-
-        if (this.id === 0) {
-            const capeMat = new THREE.MeshStandardMaterial({ color: 0xd50000, side: THREE.DoubleSide, roughness: 0.5 });
-            const cape = new THREE.Mesh(SHARED_GEO.cape, capeMat);
-            cape.position.set(0, 1.8, -0.55);
-            bodyGroup.add(cape);
-            this.rig.extra = cape;
-        } else if (this.id === 5) {
-            const brim = new THREE.Mesh(SHARED_GEO.witchHatBrim, darkSuitMat);
-            brim.position.y = 0.85;
-            const cone = new THREE.Mesh(SHARED_GEO.witchHatCone, darkSuitMat);
-            cone.position.y = 1.80;
-            headGroup.add(brim, cone);
-        }
-
-        const eyeL = new THREE.Mesh(SHARED_GEO.eye, whiteMat);
-        eyeL.position.set(-0.38, 0.15, 0.96);
-        const eyeR = new THREE.Mesh(SHARED_GEO.eye, whiteMat);
-        eyeR.position.set(0.38, 0.15, 0.96);
-        const pupL = new THREE.Mesh(SHARED_GEO.pupil, pupilMat);
-        pupL.position.set(-0.36, 0.15, 1.12);
-        const pupR = new THREE.Mesh(SHARED_GEO.pupil, pupilMat);
-        pupR.position.set(0.36, 0.15, 1.12);
-        headGroup.add(eyeL, eyeR, pupL, pupR);
-
-        const rootScaleGroup = new THREE.Group();
-        rootScaleGroup.scale.setScalar(CONFIG.racerScale);
-        rootScaleGroup.add(bodyGroup, headGroup, leftArm, rightArm, leftLeg, rightLeg);
-        this.mesh.add(rootScaleGroup);
-    }
-
-    /**
-     * Restrained character-specific ready/idle pose during READY and COUNTDOWN states.
-     * No running cycle or forward/lateral drift occurs here.
-     */
     updateReadyPose(time) {
         this.position.set(this.startX, 0, 0);
         this.mesh.position.x = this.startX;
@@ -1078,7 +792,6 @@ class Zoombie {
         const t = time * 2.4 + this.idlePhase;
         const breathe = Math.sin(t) * 0.05;
 
-        // Feet remain planted on the starting line
         leftLeg.rotation.set(0, 0, 0);
         rightLeg.rotation.set(0, 0, 0);
         this.mesh.position.y = 0;
@@ -1090,58 +803,51 @@ class Zoombie {
         headGroup.rotation.set(Math.sin(t * 0.7) * 0.04, Math.sin(t * 0.5) * 0.08, 0);
 
         switch (this.id) {
-            case 0: // Vampire: poised dramatic stance, slight cape flutter
+            case 0:
                 leftArm.rotation.set(-0.22, 0, 0.15);
                 rightArm.rotation.set(-0.35, 0, -0.22);
                 if (extra) extra.rotation.set(0.18 + Math.sin(t * 1.4) * 0.07, Math.cos(t) * 0.05, 0);
                 break;
-
-            case 1: // Pumpkin Fiend: cheerful gentle vertical bounce in place
+            case 1:
                 bodyGroup.position.y = this.baseRig.bodyY + Math.abs(Math.sin(t * 1.3)) * 0.11;
                 headGroup.rotation.z = Math.sin(t * 1.3) * 0.06;
                 leftArm.rotation.set(-0.15, 0, 0.20 + Math.sin(t * 1.3) * 0.05);
                 rightArm.rotation.set(-0.15, 0, -0.20 - Math.sin(t * 1.3) * 0.05);
                 break;
-
-            case 2: // Cursed Mummy: slight clumsy sway with loose bandage movement
+            case 2:
                 bodyGroup.rotation.z = Math.sin(t * 0.9) * 0.06;
                 headGroup.rotation.z = Math.sin(t * 0.9 - 0.5) * 0.08;
                 leftArm.rotation.set(-0.55 + Math.sin(t) * 0.06, 0, 0.08);
                 rightArm.rotation.set(-0.50 + Math.cos(t) * 0.06, 0, -0.08);
                 if (extra) extra.rotation.set(0.22 + Math.sin(t * 1.6) * 0.10, Math.sin(t) * 0.08, 0);
                 break;
-
-            case 3: // Franken-Zombie: restrained heavy shoulder heave
+            case 3:
                 bodyGroup.position.y = this.baseRig.bodyY + Math.sin(t * 0.8) * 0.07;
                 bodyGroup.rotation.x = 0.05 + Math.sin(t * 0.8) * 0.03;
                 leftArm.rotation.set(-0.32 + Math.sin(t * 0.8) * 0.05, 0, 0.12);
                 rightArm.rotation.set(-0.32 + Math.sin(t * 0.8) * 0.05, 0, -0.12);
                 break;
-
-            case 4: // Spectral Banshee: gentle floating & bobbing motion
+            case 4:
                 this.mesh.position.y = 0.22 + Math.sin(t * 1.2) * 0.18;
                 bodyGroup.rotation.z = Math.sin(t * 0.8) * 0.05;
                 leftArm.rotation.set(-0.28 + Math.sin(t * 1.2) * 0.08, 0, 0.25);
                 rightArm.rotation.set(-0.28 + Math.cos(t * 1.2) * 0.08, 0, -0.25);
                 if (extra) extra.rotation.set(0.25 + Math.sin(t * 1.8) * 0.10, 0, 0);
                 break;
-
-            case 5: // Witch-Imp: mischievous small bounce & crooked hat tilt
+            case 5:
                 bodyGroup.position.y = this.baseRig.bodyY + Math.abs(Math.sin(t * 1.5)) * 0.08;
                 headGroup.rotation.z = 0.05 + Math.sin(t * 1.5) * 0.07;
                 leftArm.rotation.set(-0.20, 0, 0.18);
                 rightArm.rotation.set(-0.20, 0, -0.18);
                 break;
-
-            case 6: // Werewolf: crouched ready stance with animated tail wag
+            case 6:
                 bodyGroup.position.y = this.baseRig.bodyY - 0.08 + breathe;
                 bodyGroup.rotation.x = 0.14;
                 leftArm.rotation.set(-0.38, 0, 0.16);
                 rightArm.rotation.set(-0.38, 0, -0.16);
                 if (extra) extra.rotation.set(0.10, Math.sin(t * 2.8) * 0.28, Math.sin(t * 2.8) * 0.15);
                 break;
-
-            case 7: // Skeleton: slight rattling / shifting stance
+            case 7:
                 bodyGroup.rotation.y = Math.sin(t * 1.4) * 0.07;
                 headGroup.rotation.z = Math.sin(t * 2.8) * 0.05;
                 leftArm.rotation.set(-0.12, 0, 0.14 + Math.sin(t * 2.8) * 0.03);
@@ -1150,9 +856,6 @@ class Zoombie {
         }
     }
 
-    /**
-     * Character-specific racing animations and forward locomotion once RACE_STATE.RACING begins.
-     */
     updateRacingMovement(delta, time) {
         const energy = Math.sin(time * 0.5 + this.energyCycle);
         let targetSpeed = this.baseSpeed;
@@ -1179,7 +882,7 @@ class Zoombie {
         const c = this.runCycle;
 
         switch (this.id) {
-            case 0: { // Vampire: dramatic sweeping stride & billowing cape
+            case 0: {
                 const swing = Math.sin(c) * 1.05;
                 this.mesh.position.y = Math.abs(Math.cos(c)) * 0.52;
                 this.mesh.rotation.set(0.22, 0, Math.cos(c) * 0.07);
@@ -1192,7 +895,7 @@ class Zoombie {
                 if (extra) extra.rotation.set(0.55 + Math.abs(Math.sin(c)) * 0.42, Math.sin(c) * 0.12, 0);
                 break;
             }
-            case 1: { // Pumpkin Fiend: bouncy weighted hop-run
+            case 1: {
                 const swing = Math.sin(c) * 0.92;
                 this.mesh.position.y = Math.abs(Math.cos(c)) * 0.72;
                 this.mesh.rotation.set(0.14, 0, Math.sin(c) * 0.11);
@@ -1204,7 +907,7 @@ class Zoombie {
                 bodyGroup.rotation.y = -swing * 0.14;
                 break;
             }
-            case 2: { // Cursed Mummy: comical outstretched shambling run
+            case 2: {
                 const swing = Math.sin(c * 0.95) * 0.86;
                 this.mesh.position.y = Math.abs(Math.cos(c * 0.95)) * 0.38;
                 this.mesh.rotation.set(0.18, 0, Math.sin(c * 0.95) * 0.15);
@@ -1216,7 +919,7 @@ class Zoombie {
                 if (extra) extra.rotation.set(0.65 + Math.abs(Math.sin(c * 1.5)) * 0.35, Math.sin(c) * 0.20, 0);
                 break;
             }
-            case 3: { // Franken-Zombie: heavy powerful lumbering charge
+            case 3: {
                 const swing = Math.sin(c * 0.85) * 0.95;
                 this.mesh.position.y = Math.abs(Math.cos(c * 0.85)) * 0.46;
                 this.mesh.rotation.set(0.20, 0, Math.cos(c * 0.85) * 0.12);
@@ -1228,7 +931,7 @@ class Zoombie {
                 headGroup.rotation.y = Math.sin(c * 0.42) * 0.12;
                 break;
             }
-            case 4: { // Spectral Banshee: rapid swooping float instead of ordinary leg cycle
+            case 4: {
                 this.mesh.position.y = 0.48 + Math.sin(c * 0.75) * 0.42;
                 this.mesh.rotation.set(0.28, Math.sin(c * 0.4) * 0.10, Math.cos(c * 0.5) * 0.10);
                 leftLeg.rotation.x = 0.35 + Math.sin(c * 1.4) * 0.25;
@@ -1239,7 +942,7 @@ class Zoombie {
                 if (extra) extra.rotation.set(0.65 + Math.sin(c * 1.6) * 0.28, 0, 0);
                 break;
             }
-            case 5: { // Witch-Imp: fast energetic scurrying run
+            case 5: {
                 const swing = Math.sin(c * 1.18) * 1.08;
                 this.mesh.position.y = Math.abs(Math.cos(c * 1.18)) * 0.54;
                 this.mesh.rotation.set(0.20, 0, Math.cos(c * 1.18) * 0.09);
@@ -1251,7 +954,7 @@ class Zoombie {
                 if (extra) extra.rotation.x = 0.50 + Math.abs(Math.sin(c * 1.18)) * 0.35;
                 break;
             }
-            case 6: { // Werewolf: energetic forward-leaning loping bound
+            case 6: {
                 const swing = Math.sin(c * 0.95) * 1.12;
                 this.mesh.position.y = Math.abs(Math.sin(c * 0.95)) * 0.64;
                 this.mesh.rotation.set(0.28 + Math.cos(c * 0.95) * 0.08, 0, 0);
@@ -1262,7 +965,7 @@ class Zoombie {
                 if (extra) extra.rotation.set(0.35 + Math.sin(c * 1.9) * 0.25, Math.cos(c) * 0.22, 0);
                 break;
             }
-            case 7: // Skeleton: exaggerated springy articulated rattle-run
+            case 7:
             default: {
                 const swing = Math.sin(c * 1.08) * 1.12;
                 this.mesh.position.y = Math.abs(Math.cos(c * 1.08)) * 0.62;
@@ -1351,7 +1054,6 @@ function initDucks() {
     const headerTitle = document.getElementById('header-race-name');
     if (headerTitle) headerTitle.innerText = raceConfig.name.toUpperCase();
 
-    // Evenly spaced, straight starting line across the road width
     const spacing = 7.4;
     const leftBound = -((CONFIG.duckCount - 1) * spacing) / 2;
 
@@ -1412,7 +1114,7 @@ function initLeaderboardDOM() {
 }
 
 /**
- * HALLOWEEN FIREWORKS SYSTEM
+ * FIREWORKS SYSTEM
  */
 const fxCanvas = document.getElementById('fireworks-canvas');
 const fxCtx = fxCanvas ? fxCanvas.getContext('2d') : null;
@@ -1642,7 +1344,6 @@ resetDataBtn.addEventListener('click', () => {
 document.getElementById('start-btn').addEventListener('click', () => {
     startScreen.classList.add('hidden');
 
-    // Reset all racers cleanly onto the starting line in READY/COUNTDOWN stance
     resetRacersToStartGrid();
     firstFinishTriggered = false;
     setRaceState(RACE_STATE.COUNTDOWN);
@@ -1693,7 +1394,6 @@ function runCountdownSequence() {
         </div>`;
     };
 
-    // Immediately show '3' so the 3-2-1 sequence is crisp and responsive
     showNum(count, '#ffab40');
     raceAudio.playCountdown(count);
     count--;
@@ -1712,7 +1412,6 @@ function runCountdownSequence() {
             sfxStart.currentTime = 0;
             sfxStart.play().catch(e => console.warn(e));
 
-            // Only now does the race state switch to RACING
             setRaceState(RACE_STATE.RACING);
         }
     }, 1000);
@@ -1754,7 +1453,7 @@ loadRaceData();
 loadAboutInfo();
 
 /**
- * CAMERA SYSTEM & DYNAMIC LIGHT/SHADOW TRACKING
+ * CAMERA SYSTEM
  */
 const clock = new THREE.Clock();
 let camAngle = 0, camTimer = 0;
@@ -1809,7 +1508,6 @@ function updateCamera(time, delta, leadDuck) {
     const bounds = getDuckBounds();
     const availableFraction = 1.0 - LB_SCREEN_FRACTION;
 
-    // Move directional moonlight & non-shadow fill/rim lights along with the pack
     moonLight.position.set(45, 95, bounds.centerZ + 40);
     moonLight.target.position.set(0, 0, bounds.centerZ);
     moonLight.target.updateMatrixWorld();
@@ -1838,7 +1536,6 @@ function updateCamera(time, delta, leadDuck) {
         look.copy(winner.position).add(new THREE.Vector3(0, 3.8, 0));
 
     } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
-        // Front-facing starting grid showcase camera
         const fitDist = calcDistanceForWidth(bounds.spreadX, availableFraction);
         target.set(bounds.centerX, Math.max(9.5, fitDist * 0.34), bounds.centerZ + fitDist * 0.92);
         look.set(bounds.centerX, 3.8, bounds.centerZ);
@@ -1925,14 +1622,12 @@ function animate() {
     const delta = deltaReal * gameSpeed;
     const time = clock.getElapsedTime();
 
-    // Flickering candle effect for roadside Jack-o'-Lanterns
     const flicker = 0.85 + Math.sin(time * 14) * 0.2 + Math.cos(time * 23) * 0.15;
     pumpkinGlowMat.emissiveIntensity = flicker;
 
     if (raceState === RACE_STATE.RACING) updateFootstepMist(delta);
     updateFireworks();
 
-    // Update all racers according to the active raceState
     ducks.forEach(d => {
         d.update(delta, time);
         if (raceState === RACE_STATE.RACING && !d.finished && d.position.z >= CONFIG.raceDistance) {
@@ -1942,7 +1637,6 @@ function animate() {
     });
 
     if (raceState === RACE_STATE.RACING) {
-        // Enlarged racer collision avoidance (min separation ~5.8 units)
         const minSep = 5.8;
         const minSepSq = minSep * minSep;
         for (let i = 0; i < ducks.length; i++) {

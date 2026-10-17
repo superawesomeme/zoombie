@@ -3,7 +3,7 @@
 :root {
     --broadcast-dark: #08050d;
     --broadcast-blue: #220e38;
-    --broadcast-accent: #ff6d00;
+    --broadcast-accent: #c042ff;
     --broadcast-ecto: #76ff03;
     --broadcast-red: #f42941;
     --broadcast-white: #ffffff;
@@ -102,8 +102,8 @@ body {
     letter-spacing: calc(var(--ui-scale) * 0.25);
     font-size: calc(var(--ui-scale) * 1.65);
     text-transform: uppercase;
-    color: #ffd180;
-    text-shadow: 0 0 10px rgba(255, 109, 0, 0.5);
+    color: #e1bee7;
+    text-shadow: 0 0 12px rgba(192, 66, 255, 0.65);
 }
 
 /* ============================================
@@ -122,7 +122,8 @@ body {
 
 .lb-title {
     background: var(--broadcast-accent);
-    color: var(--broadcast-dark);
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
     padding: 0.27em 0.9em;
     font-weight: 800;
     text-transform: uppercase;
@@ -275,7 +276,7 @@ body {
     padding: 1.5em;
     text-align: center;
     transform: skewX(-5deg);
-    box-shadow: 0 1.2em 3em rgba(0,0,0,0.9), 0 0 25px rgba(255, 109, 0, 0.15);
+    box-shadow: 0 1.2em 3em rgba(0,0,0,0.9), 0 0 25px rgba(192, 66, 255, 0.25);
     position: relative;
     width: 42vw;
 }
@@ -297,7 +298,7 @@ h1 {
     text-transform: uppercase;
     font-weight: 400;
     letter-spacing: 0.08em;
-    text-shadow: 0 0 18px rgba(255, 109, 0, 0.6), 3px 3px 0px #000;
+    text-shadow: 0 0 20px rgba(192, 66, 255, 0.8), 3px 3px 0px #000;
 }
 
 h2 {
@@ -332,7 +333,7 @@ select, input[type="text"] {
 
 select {
     appearance: none; -webkit-appearance: none; -moz-appearance: none;
-    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20292.4%20292.4%22%3E%3Cpath%20fill%3D%22%23ff6d00%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20292.4%20292.4%22%3E%3Cpath%20fill%3D%22%23c042ff%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
     background-repeat: no-repeat;
     background-position: right 0.9em center;
     background-size: 0.6em;
@@ -363,7 +364,7 @@ select:focus, input:focus { border-color: var(--broadcast-accent); }
     align-items: center;
     background: rgba(255,255,255,0.05);
     padding: 0.3em 0.5em;
-    border-left: 2px solid rgba(255, 109, 0, 0.3);
+    border-left: 2px solid rgba(192, 66, 255, 0.45);
 }
 
 .preview-num {
@@ -406,7 +407,8 @@ select:focus, input:focus { border-color: var(--broadcast-accent); }
 
 button {
     background: var(--broadcast-accent);
-    color: var(--broadcast-dark);
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     border: none;
     padding: 0.7em 2em;
     font-family: 'Rajdhani', sans-serif;
@@ -418,6 +420,8 @@ button {
 }
 button:hover {
     background: var(--broadcast-ecto);
+    color: var(--broadcast-dark);
+    text-shadow: none;
     box-shadow: 0 0 calc(var(--ui-scale) * 1.2) rgba(118, 255, 3, 0.5);
 }
 
@@ -462,7 +466,7 @@ button:hover {
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: calc(var(--ui-scale) * 0.2);
-    color: #ffd180;
+    color: #e1bee7;
 }
 
 #winner-text {
@@ -511,7 +515,7 @@ button:hover {
 
 .inp-group label {
     font-size: 0.72em;
-    color: #ffb74d;
+    color: #d1a8e8;
     margin-bottom: 0.25em;
     display: block;
 }

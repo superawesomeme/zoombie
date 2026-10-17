@@ -3,8 +3,8 @@
  */
 const CONFIG = {
     duckCount: 8,
-    raceDistance: 800,
-    targetDuration: 48,
+    raceDistance: 1600,
+    targetDuration: 96,
     roadWidth: 120,
     racerScale: 7.2
 };
@@ -324,7 +324,7 @@ function createRoadTexture() {
     const tex = new THREE.CanvasTexture(cvs);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(1, 45);
+    tex.repeat.set(1, 80);
     return tex;
 }
 
@@ -457,8 +457,8 @@ const jackLanternMaterials = [];
 function buildHauntedForestCorridor(treeTemplates) {
     forestGroup.clear();
     if (!treeTemplates || treeTemplates.length === 0) return;
-    // Reduced number of trees by half (step 26 instead of 12)
-    for (let z = -320; z < CONFIG.raceDistance + 320; z += 26) {
+    // Reduced number of trees by half (step 52 instead of 26)
+    for (let z = -320; z < CONFIG.raceDistance + 320; z += 52) {
         if (Math.random() > 0.15) {
             const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
             const tree = template.clone();
@@ -490,8 +490,8 @@ function buildTracksideGraves(graveRoot) {
     const graveBox = new THREE.Box3().setFromObject(graveRoot);
     const graveMinY = graveBox.min.y;
 
-    // Reduced number of graves by 75% (step 64 instead of 16)
-    for (let z = -120; z < CONFIG.raceDistance + 120; z += 64) {
+    // Reduced number of graves by half (step 128 instead of 64)
+    for (let z = -120; z < CONFIG.raceDistance + 120; z += 128) {
         if (Math.random() > 0.20) {
             const clone = graveRoot.clone(true);
             // Doubled size: 2.6 to 3.8
@@ -588,56 +588,39 @@ for (let z = 0; z <= CONFIG.raceDistance; z += sidingInterval) {
     landscapeGroup.add(createTrackSiding(img2, 95, z, 1));
 }
 
-// 7. Roadside Jack-o'-Lanterns & Toxic Barrels (Scattered on sides every now and then)
-function buildRoadsideProps(jackTemplate, barrelTemplate) {
+// 7. Roadside Jack-o'-Lanterns (Scattered on sides every now and then)
+function buildRoadsideProps(jackTemplate) {
     propsGroup.clear();
     jackLanternMaterials.length = 0;
-    if (!jackTemplate && !barrelTemplate) return;
+    if (!jackTemplate) return;
 
-    const items = [];
-    if (jackTemplate) items.push({ type: 'jack', obj: jackTemplate, baseScale: 2.8 });
-    if (barrelTemplate) items.push({ type: 'barrel', obj: barrelTemplate, baseScale: 3.2 });
-    if (items.length === 0) return;
-
-    for (let z = 15; z < CONFIG.raceDistance - 15; z += 54) {
+    for (let z = 20; z < CONFIG.raceDistance - 20; z += 54) {
         if (Math.random() > 0.30) {
-            const pick = items[Math.floor(Math.random() * items.length)];
-            const clone = pick.obj.clone(true);
-            const scale = pick.baseScale * (0.88 + Math.random() * 0.32);
-            const x = -61.2 - Math.random() * 4.0;
-            clone.position.set(x, 0, z + (Math.random() - 0.5) * 10);
-            if (pick.type === 'jack') {
-                clone.rotation.y = (Math.PI / 2) + (Math.random() - 0.5) * 0.7;
-                clone.traverse(c => {
-                    if (c.isMesh && c.material?.emissive && (c.material.emissive.r > 0 || c.material.emissive.g > 0)) {
-                        jackLanternMaterials.push(c.material);
-                    }
-                });
-            } else {
-                clone.rotation.y = Math.random() * Math.PI * 2;
-                clone.rotation.z = (Math.random() - 0.5) * 0.15;
-            }
+            const clone = jackTemplate.clone(true);
+            const scale = 2.8 * (0.88 + Math.random() * 0.28);
+            const x = -61.2 - Math.random() * 3.5;
+            clone.position.set(x, 0, z + (Math.random() - 0.5) * 8);
+            clone.rotation.y = (Math.PI / 2) + (Math.random() - 0.5) * 0.7;
             clone.scale.setScalar(scale);
+            clone.traverse(c => {
+                if (c.isMesh && c.material?.emissive && (c.material.emissive.r > 0 || c.material.emissive.g > 0)) {
+                    jackLanternMaterials.push(c.material);
+                }
+            });
             propsGroup.add(clone);
         }
         if (Math.random() > 0.30) {
-            const pick = items[Math.floor(Math.random() * items.length)];
-            const clone = pick.obj.clone(true);
-            const scale = pick.baseScale * (0.88 + Math.random() * 0.32);
-            const x = 61.2 + Math.random() * 4.0;
-            clone.position.set(x, 0, z + (Math.random() - 0.5) * 10);
-            if (pick.type === 'jack') {
-                clone.rotation.y = (-Math.PI / 2) + (Math.random() - 0.5) * 0.7;
-                clone.traverse(c => {
-                    if (c.isMesh && c.material?.emissive && (c.material.emissive.r > 0 || c.material.emissive.g > 0)) {
-                        jackLanternMaterials.push(c.material);
-                    }
-                });
-            } else {
-                clone.rotation.y = Math.random() * Math.PI * 2;
-                clone.rotation.z = (Math.random() - 0.5) * 0.15;
-            }
+            const clone = jackTemplate.clone(true);
+            const scale = 2.8 * (0.88 + Math.random() * 0.28);
+            const x = 61.2 + Math.random() * 3.5;
+            clone.position.set(x, 0, z + (Math.random() - 0.5) * 8);
+            clone.rotation.y = (-Math.PI / 2) + (Math.random() - 0.5) * 0.7;
             clone.scale.setScalar(scale);
+            clone.traverse(c => {
+                if (c.isMesh && c.material?.emissive && (c.material.emissive.r > 0 || c.material.emissive.g > 0)) {
+                    jackLanternMaterials.push(c.material);
+                }
+            });
             propsGroup.add(clone);
         }
     }
@@ -651,7 +634,7 @@ checkCanvas.height = 64;
 const checkCtx = checkCanvas.getContext('2d');
 checkCtx.fillStyle = '#180d28';
 checkCtx.fillRect(0, 0, 576, 64);
-checkCtx.fillStyle = '#ff8000';
+checkCtx.fillStyle = '#c042ff';
 for (let y = 0; y < 2; y++) {
     for (let x = 0; x < 18; x++) {
         if ((x + y) % 2 === 0) checkCtx.fillRect(x * 32, y * 32, 32, 32);
@@ -663,7 +646,7 @@ checkTex.magFilter = THREE.NearestFilter;
 const archPillarX = (CONFIG.roadWidth / 2) + 3.0;
 const fBanner = new THREE.Mesh(
     new THREE.BoxGeometry(CONFIG.roadWidth + 12, 8.5, 2),
-    new THREE.MeshStandardMaterial({ map: checkTex, roughness: 0.6, emissive: 0x1c0b00 })
+    new THREE.MeshStandardMaterial({ map: checkTex, roughness: 0.6, emissive: 0x220538 })
 );
 fBanner.position.set(0, 24, CONFIG.raceDistance);
 fBanner.castShadow = true;
@@ -786,14 +769,13 @@ const MonsterModelManager = {
     graveRoot: null,
     rockTemplates: [],
     jackTemplate: null,
-    barrelTemplate: null,
     ready: false,
 
     preloadAll() {
         const startBtn = document.getElementById('start-btn');
         const loadingMsg = document.createElement('div');
         loadingMsg.id = 'loading-msg';
-        loadingMsg.textContent = 'Loading arcade assets… 0/13';
+        loadingMsg.textContent = 'Loading arcade assets… 0/12';
         loadingMsg.style.cssText = 'margin-top:10px;font-size:0.85rem;color:#aaa;letter-spacing:1px;';
 
         const btnParent = startBtn?.parentNode;
@@ -801,7 +783,7 @@ const MonsterModelManager = {
         if (startBtn) { startBtn.disabled = true; startBtn.style.cursor = 'not-allowed'; }
 
         let loadedCount = 0;
-        const totalItems = 13;
+        const totalItems = 12;
 
         const updateLoadingProgress = () => {
             loadedCount++;
@@ -1036,7 +1018,7 @@ const MonsterModelManager = {
                     group.add(jackRoot);
                     this.jackTemplate = group;
 
-                    buildRoadsideProps(this.jackTemplate, this.barrelTemplate);
+                    buildRoadsideProps(this.jackTemplate);
                     updateLoadingProgress();
                     resolve();
                 },
@@ -1049,63 +1031,19 @@ const MonsterModelManager = {
             );
         });
 
-        // 6. Preload Environment toxic_barrel.glb (Scattered trackside props)
-        const barrelPromise = new Promise((resolve) => {
-            loader.load(
-                'models/toxic_barrel.glb',
-                (gltf) => {
-                    const barrelRoot = gltf.scene;
-                    barrelRoot.updateMatrixWorld(true);
-                    const box = new THREE.Box3().setFromObject(barrelRoot);
-                    const center = new THREE.Vector3();
-                    box.getCenter(center);
-
-                    barrelRoot.position.x = -center.x;
-                    barrelRoot.position.z = -center.z;
-                    barrelRoot.position.y = -box.min.y;
-
-                    barrelRoot.traverse(child => {
-                        if (child.isMesh) {
-                            child.castShadow = true;
-                            child.receiveShadow = true;
-                            if (child.material) {
-                                child.material.roughness = 0.60;
-                                child.material.metalness = 0.20;
-                            }
-                        }
-                    });
-
-                    const group = new THREE.Group();
-                    group.add(barrelRoot);
-                    this.barrelTemplate = group;
-
-                    buildRoadsideProps(this.jackTemplate, this.barrelTemplate);
-                    updateLoadingProgress();
-                    resolve();
-                },
-                undefined,
-                (err) => {
-                    console.warn('[MonsterModelManager] Failed to load models/toxic_barrel.glb:', err);
-                    updateLoadingProgress();
-                    resolve();
-                }
-            );
-        });
-
         return Promise.all([
             ...racerPromises,
             treePromise,
             gravePromise,
             rockPromise,
-            jackPromise,
-            barrelPromise
+            jackPromise
         ]).then(() => {
             this.ready = true;
             if (loadingMsg) loadingMsg.remove();
             const failedNames = MONSTER_MANIFEST.filter(e => this._failed[e.id]).map(e => e.name);
             if (failedNames.length > 0) {
                 const errEl = document.createElement('div');
-                errEl.style.cssText = 'margin-top:8px;font-size:0.8rem;color:#ff6d00;';
+                errEl.style.cssText = 'margin-top:8px;font-size:0.8rem;color:#c042ff;';
                 errEl.textContent = `Using fallback for: ${failedNames.join(', ')}`;
                 if (btnParent && startBtn) btnParent.insertBefore(errEl, startBtn);
             }
@@ -1664,7 +1602,7 @@ if (fxCanvas) fxCanvas.style.zIndex = "9999";
 let fireworks = [];
 let particles = [];
 let doFireworks = false;
-let winnerColor = '#ff6d00';
+let winnerColor = '#c042ff';
 
 function resizeCanvas() {
     if (fxCanvas) {
@@ -1921,9 +1859,9 @@ function runCountdownSequence() {
             background: #220e38;
             padding: 20px 60px;
             transform: skewX(-15deg);
-            border-left: 8px solid #ff6d00;
+            border-left: 8px solid #c042ff;
             display: inline-block;
-            box-shadow: 0 5px 30px rgba(0,0,0,0.85), 0 0 20px rgba(255, 109, 0, 0.4);
+            box-shadow: 0 5px 30px rgba(0,0,0,0.85), 0 0 20px rgba(192, 66, 255, 0.45);
         ">
             <span style="
                 font-family: 'Creepster', 'Rajdhani', sans-serif;
@@ -1931,19 +1869,19 @@ function runCountdownSequence() {
                 color: ${color};
                 display: block;
                 transform: skewX(15deg);
-                text-shadow: 0 0 20px #ff6d00;
+                text-shadow: 0 0 20px #c042ff;
             ">${num}</span>
         </div>`;
     };
 
     // Immediately show '3' so the 3-2-1 sequence is crisp and responsive
-    showNum(count, '#ffab40');
+    showNum(count, '#e1bee7');
     raceAudio.playCountdown(count);
     count--;
 
     countdownTimerId = setInterval(() => {
         if (count > 0) {
-            showNum(count, '#ffab40');
+            showNum(count, '#e1bee7');
             raceAudio.playCountdown(count);
             count--;
         } else {
@@ -2151,7 +2089,7 @@ function updateUI(leadDuck, sortedDucks, time) {
         cache.nameSpan.textContent = d.name;
 
         if (d.finished) {
-            cache.distSpan.innerHTML = `<span style="color:#ff6d00">FINISHED</span>`;
+            cache.distSpan.innerHTML = `<span style="color:#c042ff">FINISHED</span>`;
         } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
             cache.distSpan.textContent = 'READY';
         } else {

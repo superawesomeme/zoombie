@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Zoombie Racing Simulator - Automated Test Suite</title>
+    <title>Zoombie Racing Simulator - Claymation Arcade Test Suite</title>
     <link rel="shortcut icon" href="../images/icons/favicon.ico">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
@@ -20,7 +20,7 @@
     </style>
 </head>
 <body>
-    <h1>ZOOMBIE GLB UPGRADE - VERIFICATION TEST SUITE</h1>
+    <h1>ZOOMBIE RACING - CLAYMATION ASSET & ARCADE VERIFICATION</h1>
     <div id="log"></div>
     <div id="summary">Running tests...</div>
 
@@ -56,92 +56,62 @@
         loader.setDRACOLoader(dracoLoader);
 
         const MODELS = [
-            { id: 0, name: 'Vampire',          file: '../models/vampire.glb',          expectedColor: 0xF42941 },
-            { id: 1, name: 'Pumpkin Fiend',    file: '../models/pumpkin-fiend.glb',    expectedColor: 0xE9862A },
-            { id: 2, name: 'Cursed Mummy',     file: '../models/cursed-mummy.glb',     expectedColor: 0xF0F136 },
-            { id: 3, name: 'Franken-Zombie',   file: '../models/franken-zombie.glb',   expectedColor: 0x50C878 },
-            { id: 4, name: 'Spectral Banshee', file: '../models/spectral-banshee.glb', expectedColor: 0x0033FF },
-            { id: 5, name: 'Witch-Imp',        file: '../models/witch-imp.glb',        expectedColor: 0x6A2FA0 },
-            { id: 6, name: 'Werewolf',         file: '../models/werewolf.glb',         expectedColor: 0x37474F },
-            { id: 7, name: 'Skeleton',         file: '../models/skeleton.glb',         expectedColor: 0xF3F5F7 },
+            { id: 0, name: 'Vampire',  file: '../models/vampire.glb',  rotY: 0 },
+            { id: 1, name: 'Pumpkin',  file: '../models/pumpkin.glb',  rotY: 0 },
+            { id: 2, name: 'Mummy',    file: '../models/mummy.glb',    rotY: 0 },
+            { id: 3, name: 'Monster',  file: '../models/monster.glb',  rotY: 0 },
+            { id: 4, name: 'Ghost',    file: '../models/ghost.glb',    rotY: 0 },
+            { id: 5, name: 'Witch',    file: '../models/witch.glb',    rotY: Math.PI / 2 },
+            { id: 6, name: 'Werewolf', file: '../models/werewolf.glb', rotY: Math.PI / 2 },
+            { id: 7, name: 'Skeleton', file: '../models/skeleton.glb', rotY: 0 }
         ];
 
-        const REQUIRED_NODES = ['Root', 'Body', 'Head', 'Arm_L', 'Arm_R', 'Leg_L', 'Leg_R', 'Extra'];
-
         async function runTests() {
-            log('Starting GLB Loader & Rig Verification...', 'info');
+            log('Starting Claymation GLB Asset & Arcade System Verification...', 'info');
 
+            // 1. Validate All 8 Character Racers
             for (const m of MODELS) {
-                log(`\nTesting Model #${m.id}: ${m.name} (${m.file})...`, 'info');
+                log(`\nTesting Racer #${m.id + 1}: ${m.name} (${m.file})...`, 'info');
 
                 try {
                     const gltf = await new Promise((resolve, reject) => {
                         loader.load(m.file, resolve, undefined, reject);
                     });
 
-                    assert(!!gltf && !!gltf.scene, `${m.name} GLB loaded successfully`, `${m.name} failed to load`);
+                    assert(!!gltf && !!gltf.scene, `${m.name} GLB loaded cleanly via DRACOLoader`, `${m.name} failed to load`);
 
-                    // Collect named nodes
-                    const foundNodes = {};
                     let meshCount = 0;
-                    let triCount = 0;
+                    let vertCount = 0;
 
                     gltf.scene.traverse(child => {
-                        if (REQUIRED_NODES.includes(child.name)) {
-                            foundNodes[child.name] = child;
-                        }
                         if (child.isMesh) {
                             meshCount++;
                             const geo = child.geometry;
-                            if (geo.index) {
-                                triCount += geo.index.count / 3;
-                            } else if (geo.attributes.position) {
-                                triCount += geo.attributes.position.count / 3;
+                            if (geo.attributes.position) {
+                                vertCount += geo.attributes.position.count;
                             }
+                            child.castShadow = true;
+                            child.receiveShadow = true;
                         }
                     });
 
-                    // Verify required rig nodes
-                    for (const nodeName of REQUIRED_NODES) {
-                        assert(!!foundNodes[nodeName],
-                            `Node "${nodeName}" found`,
-                            `Node "${nodeName}" MISSING in ${m.name}`);
-                    }
+                    assert(meshCount > 0, `Solid clay mesh confirmed (${vertCount} vertices)`, `No meshes found in ${m.name}`);
 
-                    // Verify bounds and scale
+                    // Verify rotation alignment
+                    if (m.rotY) gltf.scene.rotation.y = m.rotY;
+                    gltf.scene.updateMatrixWorld(true);
+
                     const box = new THREE.Box3().setFromObject(gltf.scene);
                     const size = new THREE.Vector3();
                     box.getSize(size);
 
-                    assert(meshCount > 0, `Contains ${meshCount} meshes (~${Math.round(triCount)} triangles)`, `No meshes found in ${m.name}`);
-                    assert(size.y >= 3.0 && size.y <= 6.5,
-                        `Height is reasonable: ${size.y.toFixed(2)} units`,
-                        `Height out of range: ${size.y.toFixed(2)} (expected 3.0-6.5)`);
-                    assert(box.min.y >= -0.2 && box.min.y <= 0.5,
-                        `Origin aligns at/near ground level: min.y = ${box.min.y.toFixed(2)}`,
-                        `Origin misaligned: min.y = ${box.min.y.toFixed(2)}`);
+                    assert(size.z >= 1.8 && size.z <= 2.1,
+                        `Normalized kart length along Z is ~1.90 units (actual: ${size.z.toFixed(2)})`,
+                        `Unexpected kart length: ${size.z.toFixed(2)}`);
 
-                    // Verify deep clone works
+                    // Verify deep clone
                     const clone = gltf.scene.clone(true);
-                    assert(!!clone, `Scene graph deep-cloned successfully`, `Deep clone failed`);
-
-                    // Verify named nodes in clone
-                    const cloneNodes = {};
-                    clone.traverse(child => {
-                        if (REQUIRED_NODES.includes(child.name)) {
-                            cloneNodes[child.name] = child;
-                        }
-                    });
-                    assert(Object.keys(cloneNodes).length === REQUIRED_NODES.length,
-                        `Clone preserves all ${REQUIRED_NODES.length} named rig nodes`,
-                        `Clone lost named nodes: found ${Object.keys(cloneNodes).length}`);
-
-                    // Verify animation transforms can be applied to clone nodes
-                    cloneNodes['Arm_L'].rotation.x = -Math.PI / 2;
-                    cloneNodes['Leg_R'].rotation.x = 0.5;
-                    cloneNodes['Head'].rotation.y = 0.2;
-                    clone.updateMatrixWorld(true);
-                    assert(cloneNodes['Arm_L'].rotation.x === -Math.PI / 2, `Rig animation transform applied without error`, `Transform failed`);
+                    assert(!!clone, `Deep-cloned successfully for racer instantiation`, `Deep clone failed`);
 
                 } catch (err) {
                     failCount++;
@@ -149,21 +119,76 @@
                 }
             }
 
-            // Summary
-            log('\n========================================', 'info');
-            log(`TEST SUITE COMPLETE: ${passCount} passed, ${failCount} failed.`);
-            window.__TEST_RESULTS__ = { passCount, failCount, complete: true };
+            // 2. Validate Environment tree.glb (white plane removal & corridor tree extraction)
+            log('\nTesting Environment: tree.glb & White Floor Plane Cleanup...', 'info');
+            try {
+                const treeGltf = await new Promise((resolve, reject) => {
+                    loader.load('../models/tree.glb', resolve, undefined, reject);
+                });
 
-            if (failCount === 0) {
-                summaryEl.className = 'summary-pass';
-                summaryEl.textContent = `ALL ${passCount} TESTS PASSED! 8/8 GLB Racers Validated.`;
-            } else {
-                summaryEl.className = 'summary-fail';
-                summaryEl.textContent = `TESTS FAILED: ${failCount} failure(s) out of ${passCount + failCount} checks.`;
+                let planeFound = false;
+                const treeTemplates = [];
+
+                treeGltf.scene.traverse((child) => {
+                    if (child.isMesh) {
+                        const name = (child.name || '').toLowerCase();
+                        const parentName = (child.parent?.name || '').toLowerCase();
+                        const matName = (Array.isArray(child.material) 
+                            ? child.material.map(m => m.name || '').join(' ') 
+                            : (child.material?.name || '')).toLowerCase();
+
+                        if (name.includes('plane') || parentName.includes('plane') || matName.includes('plane')) {
+                            planeFound = true;
+                            if (child.parent) child.parent.remove(child);
+                            child.geometry?.dispose();
+                            return;
+                        }
+
+                        treeTemplates.push(child);
+                    }
+                });
+
+                assert(planeFound, 'Unwanted white floor plane identified and removed', 'White floor plane not found in tree.glb');
+                assert(treeTemplates.length >= 10, `Extracted ${treeTemplates.length} individual tree templates for haunted forest corridor`, 'Failed to extract trees');
+
+            } catch (err) {
+                failCount++;
+                log(`  ✗ Exception in tree.glb test: ${err.message}`, 'fail');
             }
+
+            // 3. Validate Environment grave.glb
+            log('\nTesting Environment: grave.glb...', 'info');
+            try {
+                const graveGltf = await new Promise((resolve, reject) => {
+                    loader.load('../models/grave.glb', resolve, undefined, reject);
+                });
+
+                let graveMeshes = 0;
+                graveGltf.scene.traverse(c => { if (c.isMesh) graveMeshes++; });
+
+                assert(graveMeshes >= 4, `grave.glb loaded with ${graveMeshes} obstacle/scenery meshes`, 'grave.glb mesh count unexpected');
+
+            } catch (err) {
+                failCount++;
+                log(`  ✗ Exception in grave.glb test: ${err.message}`, 'fail');
+            }
+
+            // Report final summary
+            const passed = failCount === 0;
+            summaryEl.className = passed ? 'summary-pass' : 'summary-fail';
+            summaryEl.textContent = passed
+                ? `ALL TESTS PASSED (${passCount}/${passCount})`
+                : `TESTS FAILED (${failCount} errors, ${passCount} passed)`;
+
+            window.__TEST_RESULTS__ = {
+                complete: true,
+                passCount,
+                failCount,
+                passed
+            };
         }
 
-        runTests();
+        window.addEventListener('DOMContentLoaded', runTests);
     </script>
 </body>
 </html>

@@ -9,13 +9,24 @@ const APP_INFO = {
 
 const MONSTER_TYPES = [
     "Vampire",
-    "Pumpkin Fiend",
-    "Cursed Mummy",
-    "Franken-Zombie",
-    "Spectral Banshee",
-    "Witch-Imp",
+    "Pumpkin",
+    "Mummy",
+    "Monster",
+    "Ghost",
+    "Witch",
     "Werewolf",
     "Skeleton"
+];
+
+const RACER_ASSETS = [
+    { id: 0, name: "Vampire",  file: "models/vampire.glb" },
+    { id: 1, name: "Pumpkin",  file: "models/pumpkin.glb" },
+    { id: 2, name: "Mummy",    file: "models/mummy.glb" },
+    { id: 3, name: "Monster",  file: "models/monster.glb" },
+    { id: 4, name: "Ghost",    file: "models/ghost.glb" },
+    { id: 5, name: "Witch",    file: "models/witch.glb" },
+    { id: 6, name: "Werewolf", file: "models/werewolf.glb" },
+    { id: 7, name: "Skeleton", file: "models/skeleton.glb" }
 ];
 
 const DEFAULT_RACES = [

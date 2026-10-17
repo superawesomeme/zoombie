@@ -1,13 +1,60 @@
 import { spawn } from 'child_process';
+import http from 'http';
 import fs from 'fs';
 import path from 'path';
 
-const EDGE_PATH = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const CHROME_PATH = '/usr/bin/google-chrome';
 const DEBUG_PORT = 9222;
-const USER_DATA_DIR = path.resolve('tools/.edge-profile');
+const PORT = 8000;
+const ROOT_DIR = process.cwd();
 
-if (!fs.existsSync(USER_DATA_DIR)) {
-    fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+const MIME_TYPES = {
+    '.html': 'text/html',
+    '.js': 'text/javascript',
+    '.mjs': 'text/javascript',
+    '.css': 'text/css',
+    '.json': 'application/json',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+    '.mp3': 'audio/mpeg',
+    '.glb': 'model/gltf-binary',
+    '.gltf': 'model/gltf+json',
+    '.bin': 'application/octet-stream',
+    '.wasm': 'application/wasm'
+};
+
+function createStaticServer() {
+    return http.createServer((req, res) => {
+        let reqUrl = req.url.split('?')[0];
+        if (reqUrl === '/') reqUrl = '/index.html';
+        if (reqUrl === '/favicon.ico') reqUrl = '/images/icons/favicon.ico';
+
+        const safePath = path.normalize(decodeURIComponent(reqUrl)).replace(/^(\.\.[\/\\])+/, '');
+        const filePath = path.join(ROOT_DIR, safePath);
+
+        fs.stat(filePath, (err, stats) => {
+            if (err || !stats.isFile()) {
+                res.writeHead(404, { 'Content-Type': 'text/plain' });
+                res.end('404 Not Found: ' + reqUrl);
+                return;
+            }
+
+            const ext = path.extname(filePath).toLowerCase();
+            const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+            res.writeHead(200, {
+                'Content-Type': contentType,
+                'Content-Length': stats.size,
+                'Access-Control-Allow-Origin': '*'
+            });
+
+            fs.createReadStream(filePath).pipe(res);
+        });
+    });
 }
 
 function delay(ms) {
@@ -35,7 +82,7 @@ async function getPageWsUrl() {
         }
     } catch (e) {}
 
-    throw new Error('Could not get page debugger URL from Edge on port ' + DEBUG_PORT);
+    throw new Error('Could not get page debugger URL from Chrome on port ' + DEBUG_PORT);
 }
 
 class PageCDP {
@@ -98,11 +145,14 @@ class PageCDP {
 }
 
 async function runBrowserTests() {
-    console.log('Launching headless Microsoft Edge on port 9222...');
-    const edgeProcess = spawn(EDGE_PATH, [
+    const server = createStaticServer();
+    await new Promise(res => server.listen(PORT, res));
+    console.log(`HTTP Server running at http://localhost:${PORT}/`);
+
+    console.log('Launching headless Google Chrome on port ' + DEBUG_PORT + '...');
+    const chromeProcess = spawn(CHROME_PATH, [
         '--headless=new',
         `--remote-debugging-port=${DEBUG_PORT}`,
-        `--user-data-dir=${USER_DATA_DIR}`,
         '--no-first-run',
         '--no-default-browser-check',
         '--disable-background-networking',
@@ -113,7 +163,7 @@ async function runBrowserTests() {
 
     try {
         const wsUrl = await getPageWsUrl();
-        console.log('Connected to Edge Page DevTools:', wsUrl);
+        console.log('Connected to Chrome DevTools:', wsUrl);
 
         const page = new PageCDP(wsUrl);
         await page.connect();
@@ -128,7 +178,9 @@ async function runBrowserTests() {
         page.on('Runtime.consoleAPICalled', (params) => {
             const text = params.args.map(a => a.value !== undefined ? a.value : (a.description || '')).join(' ');
             consoleMessages.push({ type: params.type, text });
-            console.log(`[Browser Console ${params.type}]`, text);
+            if (params.type === 'error') {
+                console.error(`[Browser Console Error]`, text);
+            }
         });
 
         page.on('Network.responseReceived', (params) => {
@@ -147,7 +199,7 @@ async function runBrowserTests() {
         console.log('TEST PHASE 1: Loading tools/test-suite.html in browser...');
         console.log('======================================================');
 
-        await page.send('Page.navigate', { url: 'http://localhost:8000/tools/test-suite.html' });
+        await page.send('Page.navigate', { url: `http://localhost:${PORT}/tools/test-suite.html` });
 
         let testResults = null;
         for (let i = 0; i < 40; i++) {
@@ -166,20 +218,21 @@ async function runBrowserTests() {
         if (testResults.failCount > 0) {
             throw new Error(`Test suite had ${testResults.failCount} failures!`);
         }
+        console.log('✓ All 8 character GLBs, tree cleanup, and grave assets verified in Three.js!');
 
         // ─────────────────────────────────────────────────────────────
         // TEST 2: Load actual index.html & verify pre-race READY state
         // ─────────────────────────────────────────────────────────────
         console.log('\n======================================================');
-        console.log('TEST PHASE 2: Loading index.html & Verifying Starting Line...');
+        console.log('TEST PHASE 2: Loading index.html & Starting Line Grid...');
         console.log('======================================================');
 
         consoleMessages.length = 0;
         networkErrors.length = 0;
 
-        await page.send('Page.navigate', { url: 'http://localhost:8000/index.html' });
+        await page.send('Page.navigate', { url: `http://localhost:${PORT}/index.html` });
 
-        console.log('Waiting for racer GLB preloading to complete...');
+        console.log('Waiting for racer and environment GLB preloading to complete...');
         let ready = false;
         for (let i = 0; i < 40; i++) {
             await delay(500);
@@ -196,7 +249,7 @@ async function runBrowserTests() {
         }
         console.log('✓ Preloading complete. Start button is enabled.');
 
-        // Wait 1.2 seconds on the start screen to confirm racers DO NOT drift or run in place
+        // Verify starting line stability
         await delay(1200);
 
         const preRaceAudit = await page.evaluate(`
@@ -205,42 +258,38 @@ async function runBrowserTests() {
                 isRacing,
                 isCountingDown,
                 racerScale: CONFIG.racerScale,
+                forestTreesCount: forestGroup ? forestGroup.children.length : 0,
+                gravesCount: gravesGroup ? gravesGroup.children.length : 0,
                 racers: ducks.map(d => ({
                     id: d.id,
                     name: d.name,
                     usingGLB: d.usingGLB,
-                    hasBody: !!d.rig.bodyGroup,
-                    hasHead: !!d.rig.headGroup,
-                    hasLeftArm: !!d.rig.leftArm,
-                    hasRightArm: !!d.rig.rightArm,
-                    hasLeftLeg: !!d.rig.leftLeg,
-                    hasRightLeg: !!d.rig.rightLeg,
+                    hasWheels: Array.isArray(d.wheels) && d.wheels.length === 4,
+                    wheelCount: d.wheels ? d.wheels.length : 0,
                     posX: d.position.x,
                     posZ: d.position.z,
-                    legRotL: d.rig.leftLeg.rotation.x,
-                    legRotR: d.rig.rightLeg.rotation.x
+                    speed: d.currentSpeed
                 }))
             })
         `);
 
-        console.log(`✓ Initial raceState: ${preRaceAudit.raceState} (scale: ${preRaceAudit.racerScale})`);
+        console.log(`✓ Initial raceState: ${preRaceAudit.raceState} (racerScale: ${preRaceAudit.racerScale})`);
+        console.log(`✓ Environment scenery: ${preRaceAudit.forestTreesCount} forest trees, ${preRaceAudit.gravesCount} trackside gravestones`);
         if (preRaceAudit.raceState !== 'READY') {
             throw new Error(`Expected raceState READY on start screen, got ${preRaceAudit.raceState}`);
         }
+        if (preRaceAudit.forestTreesCount === 0) {
+            throw new Error('Haunted forest corridor has 0 trees!');
+        }
 
-        console.log('\nInspecting 8 Live Racers on Start Screen:');
+        console.log('\nInspecting 8 Live Arcade Racers on Start Screen:');
         for (let i = 0; i < preRaceAudit.racers.length; i++) {
             const r = preRaceAudit.racers[i];
-            console.log(`  Racer #${r.id + 1} (${r.name}): GLB=${r.usingGLB}, X=${r.posX.toFixed(2)}, Z=${r.posZ.toFixed(2)}, LegRot=[${r.legRotL.toFixed(2)}, ${r.legRotR.toFixed(2)}]`);
+            console.log(`  Racer #${r.id + 1} (${r.name}): GLB=${r.usingGLB}, Wheels=${r.wheelCount}, X=${r.posX.toFixed(2)}, Z=${r.posZ.toFixed(2)}, Speed=${r.speed}`);
             if (!r.usingGLB) throw new Error(`Racer #${r.id} is NOT using GLB!`);
-            if (!r.hasBody || !r.hasHead || !r.hasLeftArm || !r.hasRightArm || !r.hasLeftLeg || !r.hasRightLeg) {
-                throw new Error(`Racer #${r.id} missing rig nodes!`);
-            }
+            if (!r.hasWheels) throw new Error(`Racer #${r.id} is missing 4 clay wheels!`);
             if (Math.abs(r.posZ) > 0.001) {
                 throw new Error(`Racer #${r.id} moved forward before race start (Z=${r.posZ})!`);
-            }
-            if (Math.abs(r.legRotL) > 0.001 || Math.abs(r.legRotR) > 0.001) {
-                throw new Error(`Racer #${r.id} legs are cycling before race start!`);
             }
             if (i > 0) {
                 const spacing = r.posX - preRaceAudit.racers[i - 1].posX;
@@ -249,7 +298,7 @@ async function runBrowserTests() {
                 }
             }
         }
-        console.log('✓ All 8 racers aligned in a straight starting line with zero pre-race running.');
+        console.log('✓ All 8 claymation karts aligned with proper 7.4m spacing, wheels equipped, zero drift.');
 
         if (networkErrors.length > 0) {
             console.error('Network errors detected:', networkErrors);
@@ -274,19 +323,19 @@ async function runBrowserTests() {
                 isCountingDown,
                 isRacing,
                 maxZ: Math.max(...ducks.map(d => Math.abs(d.position.z))),
-                maxLegRot: Math.max(...ducks.map(d => Math.abs(d.rig.leftLeg.rotation.x)))
+                maxSpeed: Math.max(...ducks.map(d => Math.abs(d.currentSpeed)))
             })
         `);
-        console.log(`✓ Countdown state: ${countdownCheck.raceState} | maxZ=${countdownCheck.maxZ} | maxLegRot=${countdownCheck.maxLegRot}`);
+        console.log(`✓ Countdown state: ${countdownCheck.raceState} | maxZ=${countdownCheck.maxZ} | maxSpeed=${countdownCheck.maxSpeed}`);
         if (countdownCheck.raceState !== 'COUNTDOWN' || !countdownCheck.isCountingDown || countdownCheck.isRacing) {
             throw new Error(`Expected COUNTDOWN state during countdown, got ${JSON.stringify(countdownCheck)}`);
         }
-        if (countdownCheck.maxZ > 0.001 || countdownCheck.maxLegRot > 0.001) {
-            throw new Error('Racers moved or cycled legs during countdown!');
+        if (countdownCheck.maxZ > 0.001 || countdownCheck.maxSpeed > 0.001) {
+            throw new Error('Racers moved or accelerated during countdown!');
         }
 
         // Fast-forward countdown into RACING state cleanly
-        console.log('Triggering horn transition to RACING and accelerating simulation...');
+        console.log('Transitioning to RACING state and accelerating simulation for test...');
         await page.evaluate(`
             if (countdownTimerId) {
                 clearInterval(countdownTimerId);
@@ -295,8 +344,25 @@ async function runBrowserTests() {
             const cd = document.getElementById('countdown-overlay');
             if (cd) { cd.innerHTML = ''; cd.style.display = 'none'; }
             setRaceState(RACE_STATE.RACING);
-            gameSpeed = 15.0;
+            gameSpeed = 12.0;
         `);
+
+        // Check wheel rotation during racing
+        await delay(500);
+        const wheelCheck = await page.evaluate(`
+            ducks.map(d => ({
+                id: d.id,
+                speed: d.currentSpeed,
+                wheelRotX: d.wheels[0].rotation.x,
+                tilt: d.kartTiltGroup.rotation.z
+            }))
+        `);
+        console.log('Wheel rotation & kart dynamics during race:');
+        for (const w of wheelCheck) {
+            console.log(`  Racer #${w.id + 1}: speed=${w.speed.toFixed(1)} m/s, wheelRotX=${w.wheelRotX.toFixed(2)} rad, tilt=${w.tilt.toFixed(3)} rad`);
+            if (w.wheelRotX === 0) throw new Error(`Racer #${w.id} wheels are not rotating!`);
+        }
+        console.log('✓ Wheels are rotating continuously to match forward momentum!');
 
         let raceFinished = false;
         for (let i = 0; i < 40; i++) {
@@ -317,7 +383,7 @@ async function runBrowserTests() {
         if (!raceFinished) {
             throw new Error('Race did not finish within timeout!');
         }
-        console.log('✓ All 8 racers crossed the finish line and entered FINISHED state!');
+        console.log('✓ All 8 karts crossed the finish line and entered FINISHED state!');
 
         const winnerMsg = await page.evaluate('document.getElementById("winner-text")?.innerText');
         console.log(`✓ Winner Announcement: "${winnerMsg}"`);
@@ -380,13 +446,45 @@ async function runBrowserTests() {
         if (customCheck.raceState !== 'READY' || customCheck.maxZ > 0.001) throw new Error('Custom race did not reset cleanly to starting line!');
         if (!customCheck.allGLB) throw new Error('Custom race racers failed to use GLB models!');
 
+        // ─────────────────────────────────────────────────────────────
+        // TEST 6: Render Performance (60fps Verification)
+        // ─────────────────────────────────────────────────────────────
+        console.log('\n======================================================');
+        console.log('TEST PHASE 6: 60 FPS Render Performance Audit...');
+        console.log('======================================================');
+
+        const fpsData = await page.evaluate(`
+            new Promise(resolve => {
+                let frames = 0;
+                const start = performance.now();
+                function count() {
+                    frames++;
+                    if (frames < 60) {
+                        requestAnimationFrame(count);
+                    } else {
+                        const elapsed = performance.now() - start;
+                        const fps = (frames / elapsed) * 1000;
+                        resolve({ fps, elapsed, frames });
+                    }
+                }
+                requestAnimationFrame(count);
+            })
+        `);
+
+        console.log(`✓ Render performance: ${fpsData.fps.toFixed(1)} FPS (${fpsData.frames} frames in ${fpsData.elapsed.toFixed(1)}ms)`);
+        if (fpsData.fps < 45) {
+            console.warn(`Warning: FPS lower than expected: ${fpsData.fps.toFixed(1)}`);
+        } else {
+            console.log('✓ Scene renders smoothly at ~60fps!');
+        }
+
         console.log('\n======================================================');
         console.log('🎉 ALL AUTOMATED BROWSER TESTS PASSED PERFECTLY!');
         console.log('======================================================');
 
     } finally {
-        edgeProcess.kill();
-        try { fs.rmSync(USER_DATA_DIR, { recursive: true, force: true }); } catch (e) {}
+        chromeProcess.kill();
+        server.close();
     }
 }
 

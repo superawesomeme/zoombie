@@ -16,7 +16,7 @@ const CHARACTER_MODELS = [
 ];
 
 const SCENERY_MODELS = [
-    'tree.glb', 'grave.glb'
+    'tree.glb', 'grave.glb', 'rocks.glb', 'jack-o-lantern.glb', 'toxic_barrel.glb'
 ];
 
 let allPassed = true;

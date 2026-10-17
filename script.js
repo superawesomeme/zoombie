@@ -5,8 +5,8 @@ const CONFIG = {
     duckCount: 8,
     raceDistance: 800,
     targetDuration: 48,
-    roadWidth: 74,
-    racerScale: 2.4
+    roadWidth: 120,
+    racerScale: 7.2
 };
 
 // Explicit Race State Machine
@@ -232,10 +232,10 @@ moonLight.shadow.mapSize.width = 2048;
 moonLight.shadow.mapSize.height = 2048;
 moonLight.shadow.camera.near = 10;
 moonLight.shadow.camera.far = 260;
-moonLight.shadow.camera.left = -65;
-moonLight.shadow.camera.right = 65;
-moonLight.shadow.camera.top = 85;
-moonLight.shadow.camera.bottom = -85;
+moonLight.shadow.camera.left = -85;
+moonLight.shadow.camera.right = 85;
+moonLight.shadow.camera.top = 105;
+moonLight.shadow.camera.bottom = -105;
 moonLight.shadow.bias = -0.0005;
 scene.add(moonLight);
 scene.add(moonLight.target);
@@ -372,13 +372,15 @@ landscapeGroup.add(roadMesh);
 const kerbGeo = new THREE.BoxGeometry(2.5, 0.9, roadLength);
 const kerbMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x706687, roughness: 0.85 });
 
+const roadHalf = CONFIG.roadWidth / 2;
+
 const leftKerb = new THREE.Mesh(kerbGeo, kerbMat);
-leftKerb.position.set(-(CONFIG.roadWidth / 2) - 1.25, 0.45, CONFIG.raceDistance / 2);
+leftKerb.position.set(-roadHalf - 1.25, 0.45, CONFIG.raceDistance / 2);
 leftKerb.receiveShadow = true;
 landscapeGroup.add(leftKerb);
 
 const rightKerb = new THREE.Mesh(kerbGeo, kerbMat);
-rightKerb.position.set((CONFIG.roadWidth / 2) + 1.25, 0.45, CONFIG.raceDistance / 2);
+rightKerb.position.set(roadHalf + 1.25, 0.45, CONFIG.raceDistance / 2);
 rightKerb.receiveShadow = true;
 landscapeGroup.add(rightKerb);
 
@@ -386,12 +388,12 @@ const vergeGeo = new THREE.BoxGeometry(340, 20, roadLength);
 const vergeMat = new THREE.MeshStandardMaterial({ color: 0x19261d, roughness: 0.92 });
 
 const leftVerge = new THREE.Mesh(vergeGeo, vergeMat);
-leftVerge.position.set(-208, -9.8, CONFIG.raceDistance / 2);
+leftVerge.position.set(-roadHalf - 2.5 - 170, -9.8, CONFIG.raceDistance / 2);
 leftVerge.receiveShadow = true;
 landscapeGroup.add(leftVerge);
 
 const rightVerge = new THREE.Mesh(vergeGeo, vergeMat);
-rightVerge.position.set(208, -9.8, CONFIG.raceDistance / 2);
+rightVerge.position.set(roadHalf + 2.5 + 170, -9.8, CONFIG.raceDistance / 2);
 rightVerge.receiveShadow = true;
 landscapeGroup.add(rightVerge);
 
@@ -445,27 +447,36 @@ const forestGroup = new THREE.Group();
 landscapeGroup.add(forestGroup);
 const gravesGroup = new THREE.Group();
 landscapeGroup.add(gravesGroup);
+const rocksGroup = new THREE.Group();
+landscapeGroup.add(rocksGroup);
+const propsGroup = new THREE.Group();
+landscapeGroup.add(propsGroup);
+
+const jackLanternMaterials = [];
 
 function buildHauntedForestCorridor(treeTemplates) {
     forestGroup.clear();
     if (!treeTemplates || treeTemplates.length === 0) return;
-    for (let z = -320; z < CONFIG.raceDistance + 320; z += 12) {
-        if (Math.random() > 0.12) {
+    // Reduced number of trees by half (step 26 instead of 12)
+    for (let z = -320; z < CONFIG.raceDistance + 320; z += 26) {
+        if (Math.random() > 0.15) {
             const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
             const tree = template.clone();
-            const scale = 3.2 + Math.random() * 2.2;
-            const x = -44 - Math.random() * 110;
-            tree.position.set(x, 0, z + (Math.random() - 0.5) * 8);
+            // Tripled size: 10.8 to 18.6
+            const scale = 10.8 + Math.random() * 7.8;
+            const x = -82 - Math.random() * 140;
+            tree.position.set(x, 0, z + (Math.random() - 0.5) * 12);
             tree.rotation.y = Math.random() * Math.PI * 2;
             tree.scale.set(scale, scale * (0.9 + Math.random() * 0.3), scale);
             forestGroup.add(tree);
         }
-        if (Math.random() > 0.12) {
+        if (Math.random() > 0.15) {
             const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
             const tree = template.clone();
-            const scale = 3.2 + Math.random() * 2.2;
-            const x = 44 + Math.random() * 110;
-            tree.position.set(x, 0, z + (Math.random() - 0.5) * 8);
+            // Tripled size: 10.8 to 18.6
+            const scale = 10.8 + Math.random() * 7.8;
+            const x = 82 + Math.random() * 140;
+            tree.position.set(x, 0, z + (Math.random() - 0.5) * 12);
             tree.rotation.y = Math.random() * Math.PI * 2;
             tree.scale.set(scale, scale * (0.9 + Math.random() * 0.3), scale);
             forestGroup.add(tree);
@@ -479,24 +490,55 @@ function buildTracksideGraves(graveRoot) {
     const graveBox = new THREE.Box3().setFromObject(graveRoot);
     const graveMinY = graveBox.min.y;
 
-    for (let z = -120; z < CONFIG.raceDistance + 120; z += 16) {
-        if (Math.random() > 0.28) {
+    // Reduced number of graves by 75% (step 64 instead of 16)
+    for (let z = -120; z < CONFIG.raceDistance + 120; z += 64) {
+        if (Math.random() > 0.20) {
             const clone = graveRoot.clone(true);
-            const scale = 1.0 + Math.random() * 0.5;
-            const x = -39 - Math.random() * 18;
-            clone.position.set(x, -graveMinY * scale, z + (Math.random() - 0.5) * 7);
+            // Doubled size: 2.6 to 3.8
+            const scale = 2.6 + Math.random() * 1.2;
+            const x = -64 - Math.random() * 18;
+            clone.position.set(x, -graveMinY * scale, z + (Math.random() - 0.5) * 10);
             clone.rotation.set((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.2);
             clone.scale.setScalar(scale);
             gravesGroup.add(clone);
         }
-        if (Math.random() > 0.28) {
+        if (Math.random() > 0.20) {
             const clone = graveRoot.clone(true);
-            const scale = 1.0 + Math.random() * 0.5;
-            const x = 39 + Math.random() * 18;
-            clone.position.set(x, -graveMinY * scale, z + (Math.random() - 0.5) * 7);
+            // Doubled size: 2.6 to 3.8
+            const scale = 2.6 + Math.random() * 1.2;
+            const x = 64 + Math.random() * 18;
+            clone.position.set(x, -graveMinY * scale, z + (Math.random() - 0.5) * 10);
             clone.rotation.set((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.2);
             clone.scale.setScalar(scale);
             gravesGroup.add(clone);
+        }
+    }
+}
+
+function buildTracksideRocks(rockTemplates) {
+    rocksGroup.clear();
+    if (!rockTemplates || rockTemplates.length === 0) return;
+    // Scatter isolated rock meshes sporadically between the graves along the verge
+    for (let z = -140; z < CONFIG.raceDistance + 140; z += 38) {
+        if (Math.random() > 0.38) {
+            const template = rockTemplates[Math.floor(Math.random() * rockTemplates.length)];
+            const rock = template.clone();
+            const scale = 2.4 + Math.random() * 1.8;
+            const x = -63.5 - Math.random() * 22;
+            rock.position.set(x, 0, z + (Math.random() - 0.5) * 12);
+            rock.rotation.set((Math.random() - 0.5) * 0.3, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.3);
+            rock.scale.set(scale, scale * (0.8 + Math.random() * 0.4), scale);
+            rocksGroup.add(rock);
+        }
+        if (Math.random() > 0.38) {
+            const template = rockTemplates[Math.floor(Math.random() * rockTemplates.length)];
+            const rock = template.clone();
+            const scale = 2.4 + Math.random() * 1.8;
+            const x = 63.5 + Math.random() * 22;
+            rock.position.set(x, 0, z + (Math.random() - 0.5) * 12);
+            rock.rotation.set((Math.random() - 0.5) * 0.3, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.3);
+            rock.scale.set(scale, scale * (0.8 + Math.random() * 0.4), scale);
+            rocksGroup.add(rock);
         }
     }
 }
@@ -541,51 +583,65 @@ const sidingInterval = 60;
 
 for (let z = 0; z <= CONFIG.raceDistance; z += sidingInterval) {
     const img1 = adImages[Math.floor(Math.random() * adImages.length)];
-    landscapeGroup.add(createTrackSiding(img1, -85, z, -1));
+    landscapeGroup.add(createTrackSiding(img1, -95, z, -1));
     const img2 = adImages[Math.floor(Math.random() * adImages.length)];
-    landscapeGroup.add(createTrackSiding(img2, 85, z, 1));
+    landscapeGroup.add(createTrackSiding(img2, 95, z, 1));
 }
 
-// 7. Roadside Jack-o'-Lanterns
-const pumpkinOuterMat = new THREE.MeshStandardMaterial({
-    color: 0xff6d00,
-    roughness: 0.45,
-    emissive: 0x3b1200,
-    emissiveIntensity: 0.35
-});
-const pumpkinGlowMat = new THREE.MeshStandardMaterial({
-    color: 0xfff176,
-    emissive: 0xff8000,
-    emissiveIntensity: 0.85
-});
+// 7. Roadside Jack-o'-Lanterns & Toxic Barrels (Scattered on sides every now and then)
+function buildRoadsideProps(jackTemplate, barrelTemplate) {
+    propsGroup.clear();
+    jackLanternMaterials.length = 0;
+    if (!jackTemplate && !barrelTemplate) return;
 
-function buildRoadsidePumpkins() {
-    const positions = [];
-    for (let z = 0; z <= CONFIG.raceDistance; z += 36) {
-        positions.push({ x: -35.8, z: z, rot: 0.4 });
-        positions.push({ x: 35.8, z: z, rot: -0.4 });
+    const items = [];
+    if (jackTemplate) items.push({ type: 'jack', obj: jackTemplate, baseScale: 2.8 });
+    if (barrelTemplate) items.push({ type: 'barrel', obj: barrelTemplate, baseScale: 3.2 });
+    if (items.length === 0) return;
+
+    for (let z = 15; z < CONFIG.raceDistance - 15; z += 54) {
+        if (Math.random() > 0.30) {
+            const pick = items[Math.floor(Math.random() * items.length)];
+            const clone = pick.obj.clone(true);
+            const scale = pick.baseScale * (0.88 + Math.random() * 0.32);
+            const x = -61.2 - Math.random() * 4.0;
+            clone.position.set(x, 0, z + (Math.random() - 0.5) * 10);
+            if (pick.type === 'jack') {
+                clone.rotation.y = (Math.PI / 2) + (Math.random() - 0.5) * 0.7;
+                clone.traverse(c => {
+                    if (c.isMesh && c.material?.emissive && (c.material.emissive.r > 0 || c.material.emissive.g > 0)) {
+                        jackLanternMaterials.push(c.material);
+                    }
+                });
+            } else {
+                clone.rotation.y = Math.random() * Math.PI * 2;
+                clone.rotation.z = (Math.random() - 0.5) * 0.15;
+            }
+            clone.scale.setScalar(scale);
+            propsGroup.add(clone);
+        }
+        if (Math.random() > 0.30) {
+            const pick = items[Math.floor(Math.random() * items.length)];
+            const clone = pick.obj.clone(true);
+            const scale = pick.baseScale * (0.88 + Math.random() * 0.32);
+            const x = 61.2 + Math.random() * 4.0;
+            clone.position.set(x, 0, z + (Math.random() - 0.5) * 10);
+            if (pick.type === 'jack') {
+                clone.rotation.y = (-Math.PI / 2) + (Math.random() - 0.5) * 0.7;
+                clone.traverse(c => {
+                    if (c.isMesh && c.material?.emissive && (c.material.emissive.r > 0 || c.material.emissive.g > 0)) {
+                        jackLanternMaterials.push(c.material);
+                    }
+                });
+            } else {
+                clone.rotation.y = Math.random() * Math.PI * 2;
+                clone.rotation.z = (Math.random() - 0.5) * 0.15;
+            }
+            clone.scale.setScalar(scale);
+            propsGroup.add(clone);
+        }
     }
-    const bodyGeo = new THREE.SphereGeometry(1.65, 14, 12);
-    bodyGeo.scale(1.15, 0.88, 1.15);
-    const coreGeo = new THREE.SphereGeometry(1.32, 10, 10);
-
-    const bodyInst = new THREE.InstancedMesh(bodyGeo, pumpkinOuterMat, positions.length);
-    const glowInst = new THREE.InstancedMesh(coreGeo, pumpkinGlowMat, positions.length);
-
-    const dummy = new THREE.Object3D();
-    positions.forEach((p, idx) => {
-        dummy.position.set(p.x, 1.25, p.z);
-        dummy.rotation.set(0, p.rot, 0);
-        dummy.updateMatrix();
-        bodyInst.setMatrixAt(idx, dummy.matrix);
-
-        dummy.position.set(p.x + (p.x < 0 ? 0.38 : -0.38), 1.30, p.z + 0.18);
-        dummy.updateMatrix();
-        glowInst.setMatrixAt(idx, dummy.matrix);
-    });
-    scene.add(bodyInst, glowInst);
 }
-buildRoadsidePumpkins();
 
 // 8. Start & Finish Line Gothic Archway
 const finishGroup = new THREE.Group();
@@ -604,19 +660,20 @@ for (let y = 0; y < 2; y++) {
 const checkTex = new THREE.CanvasTexture(checkCanvas);
 checkTex.magFilter = THREE.NearestFilter;
 
+const archPillarX = (CONFIG.roadWidth / 2) + 3.0;
 const fBanner = new THREE.Mesh(
-    new THREE.BoxGeometry(74, 7, 2),
+    new THREE.BoxGeometry(CONFIG.roadWidth + 12, 8.5, 2),
     new THREE.MeshStandardMaterial({ map: checkTex, roughness: 0.6, emissive: 0x1c0b00 })
 );
-fBanner.position.set(0, 21, CONFIG.raceDistance);
+fBanner.position.set(0, 24, CONFIG.raceDistance);
 fBanner.castShadow = true;
 
 const pillarMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x524666, roughness: 0.85 });
-const p1 = new THREE.Mesh(new THREE.BoxGeometry(3.5, 25, 3.5), pillarMat);
-p1.position.set(-36, 12.5, CONFIG.raceDistance);
+const p1 = new THREE.Mesh(new THREE.BoxGeometry(4.0, 28, 4.0), pillarMat);
+p1.position.set(-archPillarX, 14, CONFIG.raceDistance);
 p1.castShadow = true;
 const p2 = p1.clone();
-p2.position.set(36, 12.5, CONFIG.raceDistance);
+p2.position.set(archPillarX, 14, CONFIG.raceDistance);
 
 finishGroup.add(p1, p2, fBanner);
 scene.add(finishGroup);
@@ -727,13 +784,16 @@ const MonsterModelManager = {
     _failed: new Array(8).fill(false),
     treeTemplates: [],
     graveRoot: null,
+    rockTemplates: [],
+    jackTemplate: null,
+    barrelTemplate: null,
     ready: false,
 
     preloadAll() {
         const startBtn = document.getElementById('start-btn');
         const loadingMsg = document.createElement('div');
         loadingMsg.id = 'loading-msg';
-        loadingMsg.textContent = 'Loading arcade assets… 0/10';
+        loadingMsg.textContent = 'Loading arcade assets… 0/13';
         loadingMsg.style.cssText = 'margin-top:10px;font-size:0.85rem;color:#aaa;letter-spacing:1px;';
 
         const btnParent = startBtn?.parentNode;
@@ -741,7 +801,7 @@ const MonsterModelManager = {
         if (startBtn) { startBtn.disabled = true; startBtn.style.cursor = 'not-allowed'; }
 
         let loadedCount = 0;
-        const totalItems = 10;
+        const totalItems = 13;
 
         const updateLoadingProgress = () => {
             loadedCount++;
@@ -829,9 +889,16 @@ const MonsterModelManager = {
                             child.castShadow = true;
                             child.receiveShadow = true;
 
-                            // Extract individual tree mesh, center X/Z and ground min Y at 0
+                            // Extract individual tree mesh, check geometry orientation, center X/Z and ground min Y at 0
                             const cloneMesh = child.clone();
                             const geo = cloneMesh.geometry.clone();
+                            const geoBox = new THREE.Box3().setFromBufferAttribute(geo.attributes.position);
+                            const geoSize = new THREE.Vector3();
+                            geoBox.getSize(geoSize);
+                            // Correct trees authored with Z-up geometry to standard Y-up (rotate -90 deg on X)
+                            if (geoSize.z > geoSize.y) {
+                                geo.rotateX(-Math.PI / 2);
+                            }
                             geo.computeBoundingBox();
                             const b = geo.boundingBox;
                             const cx = (b.min.x + b.max.x) / 2;
@@ -896,7 +963,143 @@ const MonsterModelManager = {
             );
         });
 
-        return Promise.all([...racerPromises, treePromise, gravePromise]).then(() => {
+        // 4. Preload Environment rocks.glb (Isolate individual rock meshes and scatter)
+        const rockPromise = new Promise((resolve) => {
+            loader.load(
+                'models/rocks.glb',
+                (gltf) => {
+                    const rockTemplates = [];
+                    gltf.scene.traverse((child) => {
+                        if (child.isMesh) {
+                            const cloneMesh = child.clone();
+                            const geo = cloneMesh.geometry.clone();
+                            geo.computeBoundingBox();
+                            const b = geo.boundingBox;
+                            const cx = (b.min.x + b.max.x) / 2;
+                            const cz = (b.min.z + b.max.z) / 2;
+                            const minY = b.min.y;
+                            geo.translate(-cx, -minY, -cz);
+                            cloneMesh.geometry = geo;
+                            if (cloneMesh.material) {
+                                cloneMesh.material.roughness = 0.88;
+                                cloneMesh.material.metalness = 0.05;
+                            }
+                            cloneMesh.castShadow = true;
+                            cloneMesh.receiveShadow = true;
+                            rockTemplates.push(cloneMesh);
+                        }
+                    });
+                    this.rockTemplates = rockTemplates;
+                    buildTracksideRocks(rockTemplates);
+
+                    updateLoadingProgress();
+                    resolve();
+                },
+                undefined,
+                (err) => {
+                    console.warn('[MonsterModelManager] Failed to load models/rocks.glb:', err);
+                    updateLoadingProgress();
+                    resolve();
+                }
+            );
+        });
+
+        // 5. Preload Environment jack-o-lantern.glb (Scattered trackside props)
+        const jackPromise = new Promise((resolve) => {
+            loader.load(
+                'models/jack-o-lantern.glb',
+                (gltf) => {
+                    const jackRoot = gltf.scene;
+                    jackRoot.updateMatrixWorld(true);
+                    const box = new THREE.Box3().setFromObject(jackRoot);
+                    const center = new THREE.Vector3();
+                    box.getCenter(center);
+
+                    jackRoot.position.x = -center.x;
+                    jackRoot.position.z = -center.z;
+                    jackRoot.position.y = -box.min.y;
+
+                    jackRoot.traverse(child => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                            if (child.material) {
+                                child.material.roughness = 0.55;
+                                if (child.material.emissive && (child.material.emissive.r > 0 || child.material.emissive.g > 0)) {
+                                    child.material.emissiveIntensity = 2.2;
+                                }
+                            }
+                        }
+                    });
+
+                    const group = new THREE.Group();
+                    group.add(jackRoot);
+                    this.jackTemplate = group;
+
+                    buildRoadsideProps(this.jackTemplate, this.barrelTemplate);
+                    updateLoadingProgress();
+                    resolve();
+                },
+                undefined,
+                (err) => {
+                    console.warn('[MonsterModelManager] Failed to load models/jack-o-lantern.glb:', err);
+                    updateLoadingProgress();
+                    resolve();
+                }
+            );
+        });
+
+        // 6. Preload Environment toxic_barrel.glb (Scattered trackside props)
+        const barrelPromise = new Promise((resolve) => {
+            loader.load(
+                'models/toxic_barrel.glb',
+                (gltf) => {
+                    const barrelRoot = gltf.scene;
+                    barrelRoot.updateMatrixWorld(true);
+                    const box = new THREE.Box3().setFromObject(barrelRoot);
+                    const center = new THREE.Vector3();
+                    box.getCenter(center);
+
+                    barrelRoot.position.x = -center.x;
+                    barrelRoot.position.z = -center.z;
+                    barrelRoot.position.y = -box.min.y;
+
+                    barrelRoot.traverse(child => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                            if (child.material) {
+                                child.material.roughness = 0.60;
+                                child.material.metalness = 0.20;
+                            }
+                        }
+                    });
+
+                    const group = new THREE.Group();
+                    group.add(barrelRoot);
+                    this.barrelTemplate = group;
+
+                    buildRoadsideProps(this.jackTemplate, this.barrelTemplate);
+                    updateLoadingProgress();
+                    resolve();
+                },
+                undefined,
+                (err) => {
+                    console.warn('[MonsterModelManager] Failed to load models/toxic_barrel.glb:', err);
+                    updateLoadingProgress();
+                    resolve();
+                }
+            );
+        });
+
+        return Promise.all([
+            ...racerPromises,
+            treePromise,
+            gravePromise,
+            rockPromise,
+            jackPromise,
+            barrelPromise
+        ]).then(() => {
             this.ready = true;
             if (loadingMsg) loadingMsg.remove();
             const failedNames = MONSTER_MANIFEST.filter(e => this._failed[e.id]).map(e => e.name);
@@ -948,6 +1151,29 @@ function activateStartButton() {
     }
     initDucks();
 }
+
+/**
+ * Per-kart calibrated wheel alignment & proportions.
+ * Authoring coordinates extracted per clay character model to align with sculpted wheel wells.
+ */
+const KART_WHEEL_CONFIGS = [
+    // 0: Vampire (Bat-kart)
+    { halfTrack: 0.505, frontZ: 0.445, rearZ: -0.325, radius: 0.20, width: 0.16 },
+    // 1: Pumpkin (Gourd-kart)
+    { halfTrack: 0.593, frontZ: 0.448, rearZ: -0.366, radius: 0.23, width: 0.18 },
+    // 2: Mummy (Chariot-kart)
+    { halfTrack: 0.510, frontZ: 0.465, rearZ: -0.370, radius: 0.23, width: 0.17 },
+    // 3: Monster (Franken-dragster)
+    { halfTrack: 0.515, frontZ: 0.446, rearZ: -0.363, radius: 0.21, width: 0.17 },
+    // 4: Ghost (Spectral racer - narrow track)
+    { halfTrack: 0.428, frontZ: 0.455, rearZ: -0.355, radius: 0.19, width: 0.16 },
+    // 5: Witch (Cauldron/broom-kart, rotY = PI/2)
+    { halfTrack: 0.485, frontZ: 0.465, rearZ: -0.320, radius: 0.23, width: 0.17 },
+    // 6: Werewolf (Howler hotrod, rotY = PI/2)
+    { halfTrack: 0.505, frontZ: 0.453, rearZ: -0.374, radius: 0.23, width: 0.17 },
+    // 7: Skeleton (Bone-chassis dragster)
+    { halfTrack: 0.460, frontZ: 0.490, rearZ: -0.377, radius: 0.21, width: 0.16 }
+];
 
 /**
  * 3D CLAYMATION ARCADE KART RACER CLASS
@@ -1014,11 +1240,13 @@ class Zoombie {
         this.wheels = [];
         this.frontSteerGroups = [];
 
-        const wheelRadius = this.wheelRadius;
-        const wheelWidth = 0.42;
-        const halfTrack = 1.48;
-        const wheelbaseFront = 1.35;
-        const wheelbaseRear = -1.35;
+        const wheelCfg = KART_WHEEL_CONFIGS[this.id] || { halfTrack: 0.51, frontZ: 0.45, rearZ: -0.36, radius: 0.22, width: 0.17 };
+        const wheelRadius = wheelCfg.radius * CONFIG.racerScale;
+        const wheelWidth = wheelCfg.width * CONFIG.racerScale;
+        const halfTrack = wheelCfg.halfTrack * CONFIG.racerScale;
+        const wheelbaseFront = wheelCfg.frontZ * CONFIG.racerScale;
+        const wheelbaseRear = wheelCfg.rearZ * CONFIG.racerScale;
+        this.wheelRadius = wheelRadius;
 
         // Clay tire material
         const tireMat = new THREE.MeshStandardMaterial({
@@ -1057,7 +1285,8 @@ class Zoombie {
             wheelObj.add(tire, rim, nut);
 
             // Cross spokes on rim face so spin momentum is visually distinct
-            const spokeGeo = new THREE.BoxGeometry(wheelWidth + 0.06, wheelRadius * 0.42, 0.12);
+            const spokeScale = CONFIG.racerScale / 2.4;
+            const spokeGeo = new THREE.BoxGeometry(wheelWidth + 0.06, wheelRadius * 0.42, 0.12 * spokeScale);
             const spoke1 = new THREE.Mesh(spokeGeo, nutMat);
             const spoke2 = new THREE.Mesh(spokeGeo, nutMat);
             spoke2.rotation.x = Math.PI / 2;
@@ -1109,20 +1338,21 @@ class Zoombie {
             roughness: 0.65
         });
 
-        const bodyGeo = new THREE.BoxGeometry(2.4, 1.2, 3.8);
+        const s = CONFIG.racerScale / 2.4;
+        const bodyGeo = new THREE.BoxGeometry(2.4 * s, 1.2 * s, 3.8 * s);
         const bodyMesh = new THREE.Mesh(bodyGeo, kartBodyMat);
-        bodyMesh.position.y = 1.0;
+        bodyMesh.position.y = 1.0 * s;
         bodyMesh.castShadow = true;
 
-        const noseGeo = new THREE.ConeGeometry(1.2, 1.4, 4);
+        const noseGeo = new THREE.ConeGeometry(1.2 * s, 1.4 * s, 4);
         noseGeo.rotateX(Math.PI / 2);
         const noseMesh = new THREE.Mesh(noseGeo, kartBodyMat);
-        noseMesh.position.set(0, 0.8, 2.3);
+        noseMesh.position.set(0, 0.8 * s, 2.3 * s);
         noseMesh.castShadow = true;
 
-        const driverGeo = new THREE.SphereGeometry(0.85, 14, 12);
+        const driverGeo = new THREE.SphereGeometry(0.85 * s, 14, 12);
         const driverMesh = new THREE.Mesh(driverGeo, darkMat);
-        driverMesh.position.set(0, 2.0, -0.3);
+        driverMesh.position.set(0, 2.0 * s, -0.3 * s);
         driverMesh.castShadow = true;
 
         this.kartTiltGroup.add(bodyMesh, noseMesh, driverMesh);
@@ -1176,8 +1406,8 @@ class Zoombie {
         const sprite = new THREE.Sprite(
             new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cvs), depthWrite: false, depthTest: true })
         );
-        sprite.position.set(0, 6.2, 0);
-        sprite.scale.set(3.4, 2.7, 1);
+        sprite.position.set(0, 14.2, 0);
+        sprite.scale.set(6.2, 4.8, 1);
         sprite.frustumCulled = false;
         sprite.renderOrder = 100;
         this.mesh.add(sprite);
@@ -1237,14 +1467,14 @@ class Zoombie {
         this.laneTimer -= delta;
         if (this.laneTimer <= 0) {
             this.laneTimer = 1.4 + Math.random() * 2.2;
-            const laneWander = (Math.random() - 0.5) * 14;
-            this.targetX = THREE.MathUtils.clamp(this.startX + laneWander, -26, 26);
+            const laneWander = (Math.random() - 0.5) * 20;
+            this.targetX = THREE.MathUtils.clamp(this.startX + laneWander, -48, 48);
         }
 
         const dx = this.targetX - this.position.x;
-        const lateralSpeed = THREE.MathUtils.clamp(dx * 2.4, -9.5, 9.5);
+        const lateralSpeed = THREE.MathUtils.clamp(dx * 2.4, -12.0, 12.0);
         this.position.x += lateralSpeed * delta;
-        this.position.x = THREE.MathUtils.clamp(this.position.x, -28, 28);
+        this.position.x = THREE.MathUtils.clamp(this.position.x, -50, 50);
 
         this.mesh.position.x = this.position.x;
         this.mesh.position.z = this.position.z;
@@ -1278,8 +1508,10 @@ class Zoombie {
         // 6. Dust mist particles behind wheels
         this.stepTimer += delta;
         if (this.stepTimer > 0.14) {
-            spawnFootstepMist(this.position.x - 1.2, this.position.z - 2.0, 0.55 + Math.random() * 0.35);
-            spawnFootstepMist(this.position.x + 1.2, this.position.z - 2.0, 0.55 + Math.random() * 0.35);
+            const mistX = (KART_WHEEL_CONFIGS[this.id]?.halfTrack || 0.51) * CONFIG.racerScale;
+            const mistZ = (KART_WHEEL_CONFIGS[this.id]?.rearZ || -0.36) * CONFIG.racerScale;
+            spawnFootstepMist(this.position.x - mistX, this.position.z + mistZ, 1.4 + Math.random() * 0.7);
+            spawnFootstepMist(this.position.x + mistX, this.position.z + mistZ, 1.4 + Math.random() * 0.7);
             this.stepTimer = 0;
         }
     }
@@ -1363,7 +1595,7 @@ function initDucks() {
     if (headerTitle) headerTitle.innerText = raceConfig.name.toUpperCase();
 
     // Evenly spaced, straight starting line across the road width
-    const spacing = 7.4;
+    const spacing = 13.0;
     const leftBound = -((CONFIG.duckCount - 1) * spacing) / 2;
 
     for (let i = 0; i < CONFIG.duckCount; i++) {
@@ -1380,7 +1612,7 @@ function resetRacersToStartGrid() {
         initDucks();
         return;
     }
-    const spacing = 7.4;
+    const spacing = 13.0;
     const leftBound = -((CONFIG.duckCount - 1) * spacing) / 2;
     ducks.sort((a, b) => a.id - b.id);
     for (let i = 0; i < ducks.length; i++) {
@@ -1658,8 +1890,8 @@ document.getElementById('start-btn').addEventListener('click', () => {
     firstFinishTriggered = false;
     setRaceState(RACE_STATE.COUNTDOWN);
 
-    camera.position.set(0, 12, 34);
-    cameraLookAt.set(0, 3.8, 0);
+    camera.position.set(0, 18, 54);
+    cameraLookAt.set(0, 6.0, 0);
     camera.lookAt(cameraLookAt);
 
     raceAudio.init();
@@ -1756,8 +1988,8 @@ document.getElementById('restart-btn').addEventListener('click', () => {
     progressFill.style.width = "0%";
     if (speedEl) speedEl.innerText = "0";
     initDucks();
-    camera.position.set(0, 12, 34);
-    cameraLookAt.set(0, 3.8, 0);
+    camera.position.set(0, 18, 54);
+    cameraLookAt.set(0, 6.0, 0);
     camera.lookAt(cameraLookAt);
 });
 
@@ -1769,14 +2001,14 @@ loadAboutInfo();
  */
 const clock = new THREE.Clock();
 let camAngle = 0, camTimer = 0;
-let cameraLookAt = new THREE.Vector3(0, 3.8, 0);
+let cameraLookAt = new THREE.Vector3(0, 6.0, 0);
 let cinematicTarget = new THREE.Vector3();
 let cinematicLook = new THREE.Vector3();
 
 const LB_SCREEN_FRACTION = 0.33;
 const DUCK_PADDING = 5.5;
-const MIN_CAM_DIST_Z = 21;
-const MAX_CAM_DIST_Z = 38;
+const MIN_CAM_DIST_Z = 36;
+const MAX_CAM_DIST_Z = 75;
 
 function getDuckBounds() {
     let minX = Infinity, maxX = -Infinity;
@@ -1837,8 +2069,8 @@ function updateCamera(time, delta, leadDuck) {
         const winner = ducks[0];
         const t = time - winnerFinishTime;
 
-        const dist = 15 + (t * 2.5);
-        const height = 6.5 + (t * 1.6);
+        const dist = 24 + (t * 2.5);
+        const height = 11.0 + (t * 1.6);
         const angle = -0.25 + (t * 0.18);
 
         target.set(
@@ -1846,34 +2078,34 @@ function updateCamera(time, delta, leadDuck) {
             height,
             winner.position.z + Math.cos(angle) * dist
         );
-        look.copy(winner.position).add(new THREE.Vector3(0, 3.8, 0));
+        look.copy(winner.position).add(new THREE.Vector3(0, 6.0, 0));
 
     } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
         // Front-facing starting grid showcase camera
         const fitDist = calcDistanceForWidth(bounds.spreadX, availableFraction);
-        target.set(bounds.centerX, Math.max(9.5, fitDist * 0.34), bounds.centerZ + fitDist * 0.92);
-        look.set(bounds.centerX, 3.8, bounds.centerZ);
+        target.set(bounds.centerX, Math.max(16.0, fitDist * 0.36), bounds.centerZ + fitDist * 0.95);
+        look.set(bounds.centerX, 6.0, bounds.centerZ);
 
     } else {
         const distRemaining = CONFIG.raceDistance - leadDuck.position.z;
         const fitDist = calcDistanceForWidth(bounds.spreadX, availableFraction);
 
-        if (distRemaining <= 100) {
-            target.set(bounds.centerX, 9.5, leadDuck.position.z - fitDist * 0.65);
-            look.set(bounds.centerX, 3.6, leadDuck.position.z + 18);
+        if (distRemaining <= 120) {
+            target.set(bounds.centerX, 16.0, leadDuck.position.z - fitDist * 0.65);
+            look.set(bounds.centerX, 6.0, leadDuck.position.z + 24);
         } else {
             if (camAngle === 0) {
-                const camHeight = Math.max(7.5, fitDist * 0.28);
-                target.set(bounds.centerX, camHeight, leadDuck.position.z + fitDist * 0.88);
-                look.set(bounds.centerX, 3.6, leadDuck.position.z);
+                const camHeight = Math.max(13.0, fitDist * 0.30);
+                target.set(bounds.centerX, camHeight, leadDuck.position.z + fitDist * 0.90);
+                look.set(bounds.centerX, 6.0, leadDuck.position.z);
             } else if (camAngle === 1) {
-                const camHeight = Math.max(10.5, fitDist * 0.42);
-                target.set(bounds.centerX, camHeight, bounds.centerZ + fitDist * 0.98);
-                look.set(bounds.centerX, 3.4, bounds.centerZ);
+                const camHeight = Math.max(18.0, fitDist * 0.44);
+                target.set(bounds.centerX, camHeight, bounds.centerZ + fitDist * 1.0);
+                look.set(bounds.centerX, 5.8, bounds.centerZ);
             } else {
-                const camHeight = Math.max(7.5, fitDist * 0.28);
-                target.set(bounds.minX - fitDist * 0.36, camHeight, leadDuck.position.z + fitDist * 0.58);
-                look.set(bounds.centerX + 4, 3.6, leadDuck.position.z);
+                const camHeight = Math.max(13.0, fitDist * 0.30);
+                target.set(bounds.minX - fitDist * 0.36, camHeight, leadDuck.position.z + fitDist * 0.60);
+                look.set(bounds.centerX + 5, 6.0, leadDuck.position.z);
             }
         }
     }
@@ -1936,9 +2168,13 @@ function animate() {
     const delta = deltaReal * gameSpeed;
     const time = clock.getElapsedTime();
 
-    // Flickering candle effect for roadside Jack-o'-Lanterns
-    const flicker = 0.72 + Math.sin(time * 14) * 0.16 + Math.cos(time * 23) * 0.12;
-    pumpkinGlowMat.emissiveIntensity = flicker;
+    // Flickering candle effect for roadside Jack-o'-Lantern faces
+    if (jackLanternMaterials.length > 0) {
+        const flicker = 1.6 + Math.sin(time * 14) * 0.4 + Math.cos(time * 23) * 0.3;
+        for (let i = 0; i < jackLanternMaterials.length; i++) {
+            jackLanternMaterials[i].emissiveIntensity = flicker;
+        }
+    }
 
     if (raceState === RACE_STATE.RACING) updateFootstepMist(delta);
     updateFireworks();
@@ -1957,7 +2193,7 @@ function animate() {
 
     if (raceState === RACE_STATE.RACING) {
         // Kart collision avoidance and overtaking room
-        const minSep = 5.2;
+        const minSep = 12.0;
         const minSepSq = minSep * minSep;
         for (let i = 0; i < ducks.length; i++) {
             for (let j = i + 1; j < ducks.length; j++) {

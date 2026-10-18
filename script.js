@@ -829,8 +829,8 @@ function buildRoadsideProps(jackTemplate) {
     for (let z = 30; z < CONFIG.raceDistance - 30; z += 120) {
         if (Math.random() > 0.30) {
             const clone = jackTemplate.clone(true);
-            const scale = 2.8 * (0.88 + Math.random() * 0.28);
-            const x = -61.2 - Math.random() * 3.5;
+            const scale = 5.6 * (0.88 + Math.random() * 0.28);
+            const x = -68.0 - Math.random() * 4.0;
             clone.position.set(x, 0, z + (Math.random() - 0.5) * 10);
             clone.rotation.y = (Math.PI / 2) + (Math.random() - 0.5) * 0.7;
             clone.scale.setScalar(scale);
@@ -845,8 +845,8 @@ function buildRoadsideProps(jackTemplate) {
         }
         if (Math.random() > 0.30) {
             const clone = jackTemplate.clone(true);
-            const scale = 2.8 * (0.88 + Math.random() * 0.28);
-            const x = 61.2 + Math.random() * 3.5;
+            const scale = 5.6 * (0.88 + Math.random() * 0.28);
+            const x = 68.0 + Math.random() * 4.0;
             clone.position.set(x, 0, z + (Math.random() - 0.5) * 10);
             clone.rotation.y = (-Math.PI / 2) + (Math.random() - 0.5) * 0.7;
             clone.scale.setScalar(scale);

@@ -290,6 +290,18 @@ body {
     background: linear-gradient(90deg, var(--broadcast-accent), #9c27b0, var(--broadcast-ecto));
 }
 
+.start-screen-logo {
+    display: block;
+    max-width: 90%;
+    width: auto;
+    height: auto;
+    max-height: calc(var(--ui-scale) * 11);
+    margin: 0.2em auto 0.8em auto;
+    filter: drop-shadow(0 0 16px rgba(192, 66, 255, 0.55)) drop-shadow(0 4px 10px rgba(0, 0, 0, 0.7));
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
 h1 {
     font-family: 'Creepster', 'Rajdhani', cursive;
     font-size: 3.6em;

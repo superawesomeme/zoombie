@@ -29,7 +29,7 @@ const COLORS = [
     0xF3F5F7  // 7: White - Skeleton
 ];
 
-const STORAGE_KEY = 'zoombieRaceData_v1';
+const STORAGE_KEY = 'zoombieRaceData_v2';
 
 // App State
 let storedRaces = [];
@@ -53,15 +53,59 @@ function setRaceState(nextState) {
 }
 
 // -- AUDIO SETUP --
-const sfxRiver = new Audio('audio/river_looped.mp3');
-sfxRiver.loop = true;
-sfxRiver.volume = 0.5;
+const sfxRace = new Audio('audio/race.mp3');
+sfxRace.loop = true;
+sfxRace.volume = 0;
+
+const sfxEngine = new Audio('audio/engine.mp3');
+sfxEngine.loop = false;
+sfxEngine.volume = 0.9;
 
 const sfxStart = new Audio('audio/start.mp3');
 sfxStart.volume = 1.0;
 
 const sfxWinner = new Audio('audio/winner.mp3');
 sfxWinner.volume = 1.0;
+
+// Collision thud audio pool for punchy, overlapping collision sounds
+const THUD_POOL_SIZE = 6;
+const thudAudioPool = Array.from({ length: THUD_POOL_SIZE }, () => {
+    const a = new Audio('audio/thud.mp3');
+    a.volume = 0.90;
+    return a;
+});
+let thudPoolIndex = 0;
+let lastThudSoundTime = 0;
+
+function playThudSound(time) {
+    if (time !== undefined && time - lastThudSoundTime < 0.08) return;
+    if (time !== undefined) lastThudSoundTime = time;
+
+    const audio = thudAudioPool[thudPoolIndex];
+    thudPoolIndex = (thudPoolIndex + 1) % THUD_POOL_SIZE;
+    audio.currentTime = 0;
+    audio.play().catch(e => console.warn("Thud sound failed:", e));
+}
+
+// Dynamic race audio state (3s fade-in from 0 to 100%, 17% drop per finisher)
+let raceAudioTargetVolume = 1.0;
+let isFadingInRaceAudio = false;
+let raceAudioFadeTimer = 0;
+
+function startRaceAudio() {
+    if (fadeInterval) clearInterval(fadeInterval);
+    sfxRace.currentTime = 0;
+    sfxRace.volume = 0;
+    sfxRace.loop = true;
+    raceAudioFadeTimer = 0;
+    isFadingInRaceAudio = true;
+    raceAudioTargetVolume = 1.0;
+    sfxRace.play().catch(e => console.warn("Race audio play failed:", e));
+}
+
+function decreaseRaceAudioVolume(percentage = 0.17) {
+    raceAudioTargetVolume = Math.max(0, raceAudioTargetVolume - percentage);
+}
 
 // --- GENERATED HALLOWEEN AUDIO ENGINE (Spooky Countdown & Ambience) ---
 class RaceAudio {
@@ -137,7 +181,17 @@ function fadeOutAudio(audio, duration) {
 function loadRaceData() {
     const data = localStorage.getItem(STORAGE_KEY);
     if (data) {
-        storedRaces = JSON.parse(data);
+        try {
+            const parsed = JSON.parse(data);
+            const customRaces = Array.isArray(parsed) ? parsed.filter(r => r.id && String(r.id).startsWith('custom_')) : [];
+            if (typeof DEFAULT_RACES !== 'undefined') {
+                storedRaces = JSON.parse(JSON.stringify(DEFAULT_RACES)).concat(customRaces);
+            } else {
+                storedRaces = parsed;
+            }
+        } catch (e) {
+            storedRaces = (typeof DEFAULT_RACES !== 'undefined') ? JSON.parse(JSON.stringify(DEFAULT_RACES)) : [];
+        }
     } else if (typeof DEFAULT_RACES !== 'undefined') {
         storedRaces = JSON.parse(JSON.stringify(DEFAULT_RACES));
     } else {
@@ -1091,29 +1145,6 @@ function activateStartButton() {
 }
 
 /**
- * Per-kart calibrated wheel alignment & proportions.
- * Authoring coordinates extracted per clay character model to align with sculpted wheel wells.
- */
-const KART_WHEEL_CONFIGS = [
-    // 0: Vampire (Bat-kart)
-    { halfTrack: 0.505, frontZ: 0.445, rearZ: -0.325, radius: 0.20, width: 0.16 },
-    // 1: Pumpkin (Gourd-kart)
-    { halfTrack: 0.593, frontZ: 0.448, rearZ: -0.366, radius: 0.23, width: 0.18 },
-    // 2: Mummy (Chariot-kart)
-    { halfTrack: 0.510, frontZ: 0.465, rearZ: -0.370, radius: 0.23, width: 0.17 },
-    // 3: Monster (Franken-dragster)
-    { halfTrack: 0.515, frontZ: 0.446, rearZ: -0.363, radius: 0.21, width: 0.17 },
-    // 4: Ghost (Spectral racer - narrow track)
-    { halfTrack: 0.428, frontZ: 0.455, rearZ: -0.355, radius: 0.19, width: 0.16 },
-    // 5: Witch (Cauldron/broom-kart, rotY = PI/2)
-    { halfTrack: 0.485, frontZ: 0.465, rearZ: -0.320, radius: 0.23, width: 0.17 },
-    // 6: Werewolf (Howler hotrod, rotY = PI/2)
-    { halfTrack: 0.505, frontZ: 0.453, rearZ: -0.374, radius: 0.23, width: 0.17 },
-    // 7: Skeleton (Bone-chassis dragster)
-    { halfTrack: 0.460, frontZ: 0.490, rearZ: -0.377, radius: 0.21, width: 0.16 }
-];
-
-/**
  * 3D CLAYMATION ARCADE KART RACER CLASS
  */
 class Zoombie {
@@ -1126,7 +1157,6 @@ class Zoombie {
         this.position = new THREE.Vector3(startX, 0, 0);
         this.baseSpeed = CONFIG.raceDistance / CONFIG.targetDuration;
         this.currentSpeed = 0;
-        this.wheelRadius = 0.65;
         this.finished = false;
         this.finishTime = 0;
         this.aggressiveness = 0.45 + Math.random() * 0.55;
@@ -1138,14 +1168,20 @@ class Zoombie {
         this.currentTilt = 0;
         this.currentHeading = 0;
         this.targetX = startX;
-        this.laneTimer = 1.0 + Math.random() * 2.0;
         this.baseKartY = 0;
+
+        // Collision-only dramatic swerve dynamics
+        this.swerveRoll = 0;
+        this.swerveYaw = 0;
+        this.swerveVelX = 0;
+        this.swerveDuration = 0;
+        this.lastCollisionTime = -10;
 
         // Main tilt group for chassis bank/bounce
         this.kartTiltGroup = new THREE.Group();
         this.mesh.add(this.kartTiltGroup);
 
-        // Load solid clay character asset
+        // Load solid clay character asset (with sculpted wheels intact on the model)
         const glbResult = MonsterModelManager.cloneFor(id);
         if (glbResult) {
             this.usingGLB = true;
@@ -1154,9 +1190,6 @@ class Zoombie {
         } else {
             this.buildProceduralKartModel();
         }
-
-        // Build stylized claymation kart wheels
-        this.buildKartWheels();
 
         // Backward-compatible dummy rig nodes for tests
         this.rig = {
@@ -1174,95 +1207,25 @@ class Zoombie {
         scene.add(this.mesh);
     }
 
-    buildKartWheels() {
-        this.wheels = [];
-        this.frontSteerGroups = [];
+    triggerCollisionSwerve(otherRacer, time, nx) {
+        if (time - this.lastCollisionTime < 0.38) return false;
+        this.lastCollisionTime = time;
 
-        const wheelCfg = KART_WHEEL_CONFIGS[this.id] || { halfTrack: 0.51, frontZ: 0.45, rearZ: -0.36, radius: 0.22, width: 0.17 };
-        const wheelRadius = wheelCfg.radius * CONFIG.racerScale;
-        const wheelWidth = wheelCfg.width * CONFIG.racerScale;
-        const halfTrack = wheelCfg.halfTrack * CONFIG.racerScale;
-        const wheelbaseFront = wheelCfg.frontZ * CONFIG.racerScale;
-        const wheelbaseRear = wheelCfg.rearZ * CONFIG.racerScale;
-        this.wheelRadius = wheelRadius;
+        const side = (nx !== undefined && Math.abs(nx) > 0.01)
+            ? Math.sign(nx)
+            : (this.position.x >= otherRacer.position.x ? 1 : -1);
 
-        // Clay tire material
-        const tireMat = new THREE.MeshStandardMaterial({
-            color: 0x1e1924,
-            roughness: 0.72,
-            metalness: 0.04
-        });
-        // Clay rim material matching signature monster color
-        const rimMat = new THREE.MeshStandardMaterial({
-            color: this.color,
-            roughness: 0.48,
-            metalness: 0.08
-        });
-        // Hub nut & spokes
-        const nutMat = new THREE.MeshStandardMaterial({
-            color: 0xe0d6b8,
-            roughness: 0.40,
-            metalness: 0.15
-        });
+        // Dramatic arcade swerve impulses (triggered ONLY on kart collision!)
+        this.swerveVelX = side * (13.0 + Math.random() * 6.0);
+        this.swerveRoll = -side * (0.34 + Math.random() * 0.12); // ~20° to 26° sharp arcade bank
+        this.swerveYaw = side * (0.28 + Math.random() * 0.10);  // sharp counter-steer
+        this.swerveDuration = 0.85;
 
-        const tireGeo = new THREE.CylinderGeometry(wheelRadius, wheelRadius, wheelWidth, 18);
-        tireGeo.rotateZ(Math.PI / 2);
-        const rimGeo = new THREE.CylinderGeometry(wheelRadius * 0.62, wheelRadius * 0.62, wheelWidth + 0.04, 18);
-        rimGeo.rotateZ(Math.PI / 2);
-        const nutGeo = new THREE.CylinderGeometry(wheelRadius * 0.22, wheelRadius * 0.22, wheelWidth + 0.08, 6);
-        nutGeo.rotateZ(Math.PI / 2);
-
-        const makeWheelMesh = () => {
-            const wheelObj = new THREE.Group();
-            const tire = new THREE.Mesh(tireGeo, tireMat);
-            tire.castShadow = true;
-            tire.receiveShadow = true;
-            const rim = new THREE.Mesh(rimGeo, rimMat);
-            rim.castShadow = true;
-            const nut = new THREE.Mesh(nutGeo, nutMat);
-            wheelObj.add(tire, rim, nut);
-
-            // Cross spokes on rim face so spin momentum is visually distinct
-            const spokeScale = CONFIG.racerScale / 2.4;
-            const spokeGeo = new THREE.BoxGeometry(wheelWidth + 0.06, wheelRadius * 0.42, 0.12 * spokeScale);
-            const spoke1 = new THREE.Mesh(spokeGeo, nutMat);
-            const spoke2 = new THREE.Mesh(spokeGeo, nutMat);
-            spoke2.rotation.x = Math.PI / 2;
-            wheelObj.add(spoke1, spoke2);
-
-            return wheelObj;
-        };
-
-        // Front Left (with steering pivot)
-        this.steerGroupFL = new THREE.Group();
-        this.steerGroupFL.position.set(-halfTrack, wheelRadius, wheelbaseFront);
-        this.wheelFL = makeWheelMesh();
-        this.steerGroupFL.add(this.wheelFL);
-        this.kartTiltGroup.add(this.steerGroupFL);
-
-        // Front Right (with steering pivot)
-        this.steerGroupFR = new THREE.Group();
-        this.steerGroupFR.position.set(halfTrack, wheelRadius, wheelbaseFront);
-        this.wheelFR = makeWheelMesh();
-        this.steerGroupFR.add(this.wheelFR);
-        this.kartTiltGroup.add(this.steerGroupFR);
-
-        // Rear Left
-        this.steerGroupRL = new THREE.Group();
-        this.steerGroupRL.position.set(-halfTrack, wheelRadius, wheelbaseRear);
-        this.wheelRL = makeWheelMesh();
-        this.steerGroupRL.add(this.wheelRL);
-        this.kartTiltGroup.add(this.steerGroupRL);
-
-        // Rear Right
-        this.steerGroupRR = new THREE.Group();
-        this.steerGroupRR.position.set(halfTrack, wheelRadius, wheelbaseRear);
-        this.wheelRR = makeWheelMesh();
-        this.steerGroupRR.add(this.wheelRR);
-        this.kartTiltGroup.add(this.steerGroupRR);
-
-        this.wheels = [this.wheelFL, this.wheelFR, this.wheelRL, this.wheelRR];
-        this.frontSteerGroups = [this.steerGroupFL, this.steerGroupFR];
+        // Collision mist burst at the point of impact
+        const contactX = (this.position.x + otherRacer.position.x) / 2;
+        const contactZ = (this.position.z + otherRacer.position.z) / 2;
+        spawnFootstepMist(contactX, contactZ, 2.4);
+        return true;
     }
 
     buildProceduralKartModel() {
@@ -1306,13 +1269,16 @@ class Zoombie {
         this.currentHeading = 0;
         this.targetX = this.startX;
 
+        this.swerveRoll = 0;
+        this.swerveYaw = 0;
+        this.swerveVelX = 0;
+        this.swerveDuration = 0;
+        this.lastCollisionTime = -10;
+
         this.mesh.position.set(this.startX, 0, 0);
         this.mesh.rotation.set(0, 0, 0);
         this.kartTiltGroup.position.set(0, this.baseKartY, 0);
         this.kartTiltGroup.rotation.set(0, 0, 0);
-
-        if (this.steerGroupFL) this.steerGroupFL.rotation.y = 0;
-        if (this.steerGroupFR) this.steerGroupFR.rotation.y = 0;
     }
 
     addNameLabel() {
@@ -1352,20 +1318,7 @@ class Zoombie {
     }
 
     /**
-     * Continuous wheel rotation proportional to forward momentum
-     */
-    updateWheels(delta) {
-        const speed = Math.max(0, this.currentSpeed || 0);
-        const rotDelta = (speed / this.wheelRadius) * delta;
-        if (this.wheels) {
-            for (let i = 0; i < this.wheels.length; i++) {
-                this.wheels[i].rotation.x += rotDelta;
-            }
-        }
-    }
-
-    /**
-     * Restrained starting line stance: karts planted at Z=0, zero wheel spin, gentle engine throb.
+     * Restrained starting line stance: karts planted at Z=0, gentle engine throb.
      */
     updateReadyPose(time) {
         this.position.set(this.startX, 0, 0);
@@ -1373,11 +1326,12 @@ class Zoombie {
         this.mesh.position.y = 0;
         this.mesh.rotation.set(0, 0, 0);
         this.currentSpeed = 0;
-
-        if (this.steerGroupFL) this.steerGroupFL.rotation.y = 0;
-        if (this.steerGroupFR) this.steerGroupFR.rotation.y = 0;
         this.currentTilt = 0;
         this.currentHeading = 0;
+        this.swerveRoll = 0;
+        this.swerveYaw = 0;
+        this.swerveVelX = 0;
+        this.swerveDuration = 0;
 
         // Subtle idle engine throb / chassis vibration on the line
         const idleThrob = Math.sin(time * 18 + this.id * 2.2) * 0.025;
@@ -1386,7 +1340,7 @@ class Zoombie {
     }
 
     /**
-     * Arcade kart locomotion & physics: steering turns, roll tilt, track bounce, wheel rotation.
+     * Arcade kart locomotion & physics: natural lane holding, dramatic swerves only upon collision.
      */
     updateRacingMovement(delta, time) {
         const energy = Math.sin(time * 0.5 + this.energyCycle);
@@ -1401,53 +1355,58 @@ class Zoombie {
         this.currentSpeed = targetSpeed;
         this.position.z += targetSpeed * delta;
 
-        // Tactical arcade lane changing
-        this.laneTimer -= delta;
-        if (this.laneTimer <= 0) {
-            this.laneTimer = 1.4 + Math.random() * 2.2;
-            const laneWander = (Math.random() - 0.5) * 20;
-            this.targetX = THREE.MathUtils.clamp(this.startX + laneWander, -48, 48);
+        // Natural, organic lane holding along the raceway
+        const targetLaneX = this.startX + Math.sin(time * 0.75 + this.id * 1.6) * 1.6;
+        const dx = targetLaneX - this.position.x;
+        const lateralSpeed = THREE.MathUtils.clamp(dx * 1.5, -2.5, 2.5);
+        this.position.x += lateralSpeed * delta;
+
+        // Apply dramatic collision swerve impulse if active
+        if (this.swerveDuration > 0) {
+            this.swerveDuration -= delta;
+            this.position.x += this.swerveVelX * delta;
+            this.position.x = THREE.MathUtils.clamp(this.position.x, -50, 50);
+
+            // Damping of lateral push
+            this.swerveVelX *= Math.exp(-4.2 * delta);
+
+            // Elastic spring-damper recovery of roll tilt and heading yaw
+            this.swerveRoll = THREE.MathUtils.lerp(this.swerveRoll, 0, Math.min(1.0, 5.5 * delta));
+            this.swerveYaw = THREE.MathUtils.lerp(this.swerveYaw, 0, Math.min(1.0, 4.8 * delta));
+        } else {
+            this.swerveVelX = 0;
+            this.swerveRoll = 0;
+            this.swerveYaw = 0;
         }
 
-        const dx = this.targetX - this.position.x;
-        const lateralSpeed = THREE.MathUtils.clamp(dx * 2.4, -12.0, 12.0);
-        this.position.x += lateralSpeed * delta;
         this.position.x = THREE.MathUtils.clamp(this.position.x, -50, 50);
-
         this.mesh.position.x = this.position.x;
         this.mesh.position.z = this.position.z;
 
-        // Arcade kart dynamics:
-        // 1. Front wheels steer smoothly into steering turns
-        const steerAngle = THREE.MathUtils.clamp(lateralSpeed * 0.045, -0.38, 0.38);
-        if (this.steerGroupFL) this.steerGroupFL.rotation.y = steerAngle;
-        if (this.steerGroupFR) this.steerGroupFR.rotation.y = steerAngle;
+        // Natural subtle roll into lane curves combined with collision bank
+        const normalTilt = -lateralSpeed * 0.022;
+        this.currentTilt = THREE.MathUtils.lerp(this.currentTilt, normalTilt, 7 * delta);
+        this.kartTiltGroup.rotation.z = this.currentTilt + this.swerveRoll;
 
-        // 2. Karts tilt smoothly into steering turns (roll/bank)
-        const targetTilt = -lateralSpeed * 0.038;
-        this.currentTilt = THREE.MathUtils.lerp(this.currentTilt, targetTilt, 9 * delta);
-        this.kartTiltGroup.rotation.z = this.currentTilt;
+        // Natural subtle heading combined with collision yaw
+        const normalHeading = Math.atan2(lateralSpeed, targetSpeed) * 0.45;
+        this.currentHeading = THREE.MathUtils.lerp(this.currentHeading, normalHeading, 6 * delta);
+        this.kartTiltGroup.rotation.y = this.currentHeading + this.swerveYaw;
 
-        // 3. Subtle heading yaw
-        const targetHeading = Math.atan2(lateralSpeed, targetSpeed);
-        this.currentHeading = THREE.MathUtils.lerp(this.currentHeading, targetHeading, 7 * delta);
-        this.kartTiltGroup.rotation.y = this.currentHeading;
-
-        // 4. Bouncing slightly over the track (tactile clay road rumble)
+        // Tactile clay road rumble bounce & pitch
         const bounceRate = 18.0 + (this.currentSpeed / this.baseSpeed) * 8.0;
         const bounceAmt = (this.currentSpeed / this.baseSpeed) * 0.08;
         const bounceY = Math.abs(Math.sin(time * bounceRate + this.id * 1.8)) * bounceAmt;
         this.kartTiltGroup.position.y = this.baseKartY + bounceY;
 
-        // 5. Slight acceleration pitch
         const pitch = Math.sin(time * (bounceRate * 0.5) + this.id) * 0.022;
         this.kartTiltGroup.rotation.x = pitch;
 
-        // 6. Dust mist particles behind wheels
+        // Dust mist particles behind karts
         this.stepTimer += delta;
         if (this.stepTimer > 0.14) {
-            const mistX = (KART_WHEEL_CONFIGS[this.id]?.halfTrack || 0.51) * CONFIG.racerScale;
-            const mistZ = (KART_WHEEL_CONFIGS[this.id]?.rearZ || -0.36) * CONFIG.racerScale;
+            const mistX = 3.6;
+            const mistZ = -2.6;
             spawnFootstepMist(this.position.x - mistX, this.position.z + mistZ, 1.4 + Math.random() * 0.7);
             spawnFootstepMist(this.position.x + mistX, this.position.z + mistZ, 1.4 + Math.random() * 0.7);
             this.stepTimer = 0;
@@ -1458,6 +1417,10 @@ class Zoombie {
         this.mesh.position.x = this.position.x;
         this.mesh.position.z = this.position.z;
         this.currentSpeed = 0;
+        this.swerveRoll = 0;
+        this.swerveYaw = 0;
+        this.swerveVelX = 0;
+        this.swerveDuration = 0;
 
         const isWinner = (ducks[0] === this);
         if (isWinner) {
@@ -1500,17 +1463,6 @@ class Zoombie {
                 child.material.dispose();
             }
         });
-    }
-}
-
-/**
- * Helper loop that checks the speed of each racer and rotates their wheels
- * continuously to match forward momentum.
- */
-function updateAllRacerWheels(delta) {
-    if (!ducks) return;
-    for (let i = 0; i < ducks.length; i++) {
-        ducks[i].updateWheels(delta);
     }
 }
 
@@ -1834,10 +1786,13 @@ document.getElementById('start-btn').addEventListener('click', () => {
 
     raceAudio.init();
 
-    if (fadeInterval) clearInterval(fadeInterval);
-    sfxRiver.currentTime = 0;
-    sfxRiver.volume = 0.5;
-    sfxRiver.play().catch(e => console.warn("Ambience sound failed:", e));
+    // Play engine.mp3 once at the very start of each race
+    sfxEngine.currentTime = 0;
+    sfxEngine.volume = 0.9;
+    sfxEngine.play().catch(e => console.warn("Engine sound failed:", e));
+
+    // Play race.mp3 on loop, fading in from 0% to 100% volume at 3 seconds
+    startRaceAudio();
 
     runCountdownSequence();
 });
@@ -1911,7 +1866,14 @@ document.getElementById('restart-btn').addEventListener('click', () => {
         clearInterval(fadeInterval);
         fadeInterval = null;
     }
-    sfxRiver.pause(); sfxRiver.currentTime = 0; sfxRiver.volume = 0.5;
+    sfxRace.pause();
+    sfxRace.currentTime = 0;
+    sfxRace.volume = 0;
+    sfxEngine.pause();
+    sfxEngine.currentTime = 0;
+    isFadingInRaceAudio = false;
+    raceAudioTargetVolume = 1.0;
+
     sfxWinner.pause(); sfxWinner.currentTime = 0;
 
     stopFireworks();
@@ -2123,14 +2085,31 @@ function animate() {
         if (raceState === RACE_STATE.RACING && !d.finished && d.position.z >= CONFIG.raceDistance) {
             d.finished = true;
             d.finishTime = time;
+            // As each kart reaches the finish line, decrease volume of race.mp3 by 17%
+            decreaseRaceAudioVolume(0.17);
         }
     });
 
-    // Helper loop that checks the speed of each racer and rotates their wheels continuously to match forward momentum
-    updateAllRacerWheels(delta);
+    // Dynamic race audio volume management (fade-in over 3s, then smooth stepping on kart finishes)
+    if (isFadingInRaceAudio) {
+        raceAudioFadeTimer += deltaReal;
+        const progress = Math.min(raceAudioFadeTimer / 3.0, 1.0);
+        sfxRace.volume = progress * 1.0;
+        if (progress >= 1.0) {
+            isFadingInRaceAudio = false;
+            sfxRace.volume = 1.0;
+            raceAudioTargetVolume = 1.0;
+        }
+    } else if (sfxRace && !sfxRace.paused) {
+        if (Math.abs(sfxRace.volume - raceAudioTargetVolume) > 0.005) {
+            sfxRace.volume = THREE.MathUtils.lerp(sfxRace.volume, raceAudioTargetVolume, Math.min(1.0, deltaReal * 4.0));
+        } else {
+            sfxRace.volume = raceAudioTargetVolume;
+        }
+    }
 
     if (raceState === RACE_STATE.RACING) {
-        // Kart collision avoidance and overtaking room
+        // Kart collision avoidance and overtaking room with dramatic collision swerves
         const minSep = 12.0;
         const minSepSq = minSep * minSep;
         for (let i = 0; i < ducks.length; i++) {
@@ -2147,6 +2126,13 @@ function animate() {
                     const nx = dx / dist, nz = dz / dist;
                     d1.position.x += nx * push; d1.position.z += nz * push;
                     d2.position.x -= nx * push; d2.position.z -= nz * push;
+
+                    // Trigger dramatic swerves & thud sound ONLY upon collision with another kart
+                    const c1 = d1.triggerCollisionSwerve(d2, time, nx);
+                    const c2 = d2.triggerCollisionSwerve(d1, time, -nx);
+                    if (c1 || c2) {
+                        playThudSound(time);
+                    }
                 }
             }
         }
@@ -2176,7 +2162,7 @@ function animate() {
             winnerText.style.color = lightenColor(trueWinner.color, 0.4);
             setTimeout(() => { endScreen.classList.remove('hidden'); }, 2000);
 
-            fadeOutAudio(sfxRiver, 4000);
+            fadeOutAudio(sfxRace, 3000);
         }
     }
 

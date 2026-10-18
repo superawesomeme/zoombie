@@ -1,9 +1,9 @@
 // data.js
 
 const APP_INFO = {
-    title: "Zoombie Racing Simulator",
+    title: "Zoombie Racing",
     version: "Version 1.0 - Halloween Edition",
-    description: "Developed for Picket Piece Social Club. This is a real-time 3D Halloween monster racing simulation powered by Three.js and WebGL. Features include articulated 3D Zoombie characters, a moonlit haunted road, custom event management, and live telemetry tracking.",
+    description: "Developed for Picket Piece Social Club. This is a real-time 3D Halloween monster racing simulation powered by Three.js and WebGL. Features include articulated 3D Zoombie characters and live telemetry tracking.",
     copyright: `© ${new Date().getFullYear()} Shaun Daubney. All rights reserved.`
 };
 
@@ -32,42 +32,42 @@ const RACER_ASSETS = [
 const DEFAULT_RACES = [
     {
         id: "race_1",
-        name: "Walworth Werewolf Dash",
-        ducks: ["Count Fangula", "Jack O'Lantern", "King Tut-ankh-rot", "Franken-Sprint", "Banshee Bolt", "Hexa Wicked", "Wolfie Howler", "Grim Bonez"]
+        name: "Walworth Wasteland",
+        ducks: ["Justin Bleeder", "Jack O'Chan", "King Tut Tut Tut", "Billy Bolts", "Boo Radley", "Hermione Danger", "Tyson Furry", "Bony Tyler"]
     },
     {
         id: "race_2",
-        name: "Locksbridge Lich Lunge",
-        ducks: ["Vlad the Impaler", "Gourd Almighty", "Wraps McGee", "Bolt Neck", "Phantom Phred", "Blair Twitch", "Hairy Trotter", "Skelly Kelly"]
+        name: "Locksbridge Limbo",
+        ducks: ["Vlad the Inhaler", "Pump N'Grind", "Pharaoh Williams", "Boris Car-loff", "Sheet Faced", "Blair Twitch", "Hairy Potter", "Skelly Kelly"]
     },
     {
         id: "race_3",
         name: "Deadmouse Derby",
-        ducks: ["Nosferatu Express", "Smashing Pumpkin", "Mummy Mia", "Brainz Yanic", "Polter-Guy", "Cauldron Carl", "Barking Mad", "Ribcage Roy"]
+        ducks: ["Blood Pitt", "Soup Erkins", "Mummy Mia", "Stitches Get Riches", "Ghost Malone", "Erma Creep", "Barking Mad", "The Bone Ranger"]
     },
     {
         id: "race_4",
         name: "Harroway Haunt",
-        ducks: ["Drac Black", "Peter Pumpkin", "Bandage Bob", "Stitch Up", "Wailing Wanda", "Hocus Pocus", "Moon Moon", "Femur Mercury"]
+        ducks: ["Drac Black", "Gourd-on Ramsay", "Tomb Hanks", "Patchwork Pete", "Paranorman", "Wanda Rection", "Lycan Subscribe", "Deaddy Mercury"]
     },
     {
         id: "race_5",
         name: "Terror Valley Rally",
-        ducks: ["Bela Lugosi", "Patch Adams", "Cleo-Rot-ra", "Green Mean", "Ghoulia Roberts", "Sabrina Spell", "Sir Growls-a-Lot", "Indiana Bones"]
+        ducks: ["Count Down", "Patch Adams", "Gauze N' Roses", "Professor Green", "Ghoulia Roberts", "Witch and Famous", "Claw-dia Winkleman", "Indiana Bones"]
     },
     {
         id: "race_6",
         name: "Finkley Fright Night",
-        ducks: ["Alucard", "Candle Jack", "Imhotep Step", "Lurching Lou", "Spectre Gadget", "Endora Dash", "Fenrir Fast", "Napoleon Boned"]
+        ducks: ["Fangs For Nothing", "Veg Ur Bets", "Curse-tian Bale", "Screw Loose", "Spectre Gadget", "Hagatha Christie", "Luna Tick", "Napoleon Bonesapart"]
     },
     {
         id: "race_7",
-        name: "Hellhound Highway",
-        ducks: ["Lestat LeZoom", "Harvest Horror", "Sphinxter", "Igor Beaver", "Casper Creep", "Bellatrix", "Silver Bullet", "Skull Dugggery"]
+        name: "Harroway Hell",
+        ducks: ["Will Stake-speare", "Joe Squash", "Minnie the Sphinx", "Igor Beaver", "Kerri-fying", "Claire Voyant", "Mane Man", "Skull Dougery"]
     },
     {
         id: "race_8",
-        name: "Spooky Club Cup",
-        ducks: ["Baron Blood", "Turnip Terror", "Pharaoh Fright", "Zomb-Boy", "Ecto-Blaster", "Broomstick Bill", "Picket Prowler", "Rattle & Hum"]
+        name: "Lost Soul-cial Club Cup",
+        ducks: ["Batasha", "Butternut Stu", "Shaun the Shriek", "Odds N'Bens", "Hollow Hannah", "Hexy Becky", "Scarahhh Howlaway", "Craze Ann-atomy"]
     }
 ];

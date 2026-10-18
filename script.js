@@ -59,7 +59,7 @@ function setRaceState(nextState) {
 }
 
 // -- AUDIO SETUP --
-const sfxRace = new Audio('audio/race.mp3');
+const sfxRace = new Audio('audio/race.ogg');
 sfxRace.loop = true;
 sfxRace.volume = 0;
 
@@ -2040,7 +2040,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     sfxEngine.volume = 0.9;
     sfxEngine.play().catch(e => console.warn("Engine sound failed:", e));
 
-    // Play race.mp3 on loop, fading in from 0% to 100% volume at 3 seconds
+    // Play race.ogg on loop, fading in from 0% to 100% volume at 3 seconds
     startRaceAudio();
 
     runCountdownSequence();
@@ -2423,7 +2423,7 @@ function animate() {
         if (raceState === RACE_STATE.RACING && !d.finished && d.position.z >= CONFIG.raceDistance) {
             d.finished = true;
             d.finishTime = time;
-            // As each kart reaches the finish line, decrease volume of race.mp3 by 17%
+            // As each kart reaches the finish line, decrease volume of race.ogg by 17%
             decreaseRaceAudioVolume(0.17);
         }
     }

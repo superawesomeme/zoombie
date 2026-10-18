@@ -290,8 +290,12 @@ function createNightSkyTexture() {
 }
 
 scene.background = createNightSkyTexture();
-// Fog matches the lower-horizon royal purple of the sky gradient for seamless depth
-scene.fog = new THREE.FogExp2(0x22133d, 0.0026);
+
+// Distance Fog matching the deep midnight purple horizon for seamless infinite fade
+const FOG_COLOR = 0x22133d;
+const FOG_NEAR = 180;
+const FOG_FAR = 1250;
+scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR, FOG_FAR);
 
 // --- BALANCED CARTOON NIGHT LIGHTING (Not over-exposed, strong colour separation) ---
 const ambientLight = new THREE.AmbientLight(0x3d2b63, 0.42);
@@ -460,7 +464,7 @@ rightKerb.position.set(roadHalf + 1.25, 0.45, CONFIG.raceDistance / 2);
 rightKerb.receiveShadow = true;
 landscapeGroup.add(rightKerb);
 
-const vergeWidth = 500;
+const vergeWidth = 1400;
 const vergeGeo = new THREE.BoxGeometry(vergeWidth, 20, roadLength);
 const vergeMat = new THREE.MeshStandardMaterial({ color: 0x19261d, roughness: 0.92 });
 
@@ -513,7 +517,52 @@ starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
 const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2.3, fog: false });
 scene.add(new THREE.Points(starGeo, starMat));
 
-// 4. GLTF & DRACO Loaders configured for Draco-compressed meshes
+// 4. Low-Poly Boundary Mountain Ring (Static jagged Halloween wasteland horizon ridge)
+const ringRadiusBottom = 1050;
+const ringRadiusTop = 1200;
+const ringHeight = 320;
+const ringSegments = 56;
+const ringGeo = new THREE.CylinderGeometry(ringRadiusTop, ringRadiusBottom, ringHeight, ringSegments, 1, true);
+
+const posAttr = ringGeo.attributes.position;
+for (let i = 0; i < posAttr.count; i++) {
+    const y = posAttr.getY(i);
+    if (y > 0) { // Top edge vertices forming the jagged mountain silhouette
+        const x = posAttr.getX(i);
+        const z = posAttr.getZ(i);
+        const angle = Math.atan2(z, x);
+
+        // Stylized cartoon Halloween wasteland jagged ridges & craggy silhouettes
+        const noise = Math.sin(angle * 3.0) * 45.0
+                    + Math.sin(angle * 7.0 + 1.2) * 32.0
+                    + Math.cos(angle * 13.0) * 20.0
+                    + Math.sin(angle * 21.0 + 2.4) * 14.0;
+
+        // Sharp needle spires and barren wasteland peaks
+        const sharpPeak = Math.pow(Math.abs(Math.sin(angle * 5.0 + 0.8)), 2.2) * 65.0;
+        const craggyPeak = Math.pow(Math.abs(Math.cos(angle * 9.0 + 1.7)), 1.8) * 40.0;
+
+        const totalDisplacement = noise + sharpPeak + craggyPeak;
+        posAttr.setY(i, y + totalDisplacement);
+
+        // Slanted ridge tops flaring slightly outward towards outer fog boundary
+        const rFactor = 1.0 + (totalDisplacement / 320.0) * 0.04;
+        posAttr.setX(i, x * rFactor);
+        posAttr.setZ(i, z * rFactor);
+    }
+}
+ringGeo.computeVertexNormals();
+
+const ringMat = new THREE.MeshLambertMaterial({
+    color: 0x1a0f2e, // Deep midnight purple complementing track and verge surfaces
+    flatShading: true,
+    side: THREE.BackSide
+});
+const boundaryRing = new THREE.Mesh(ringGeo, ringMat);
+boundaryRing.position.set(camera.position.x, -70, camera.position.z);
+scene.add(boundaryRing);
+
+// 5. GLTF & DRACO Loaders configured for Draco-compressed meshes
 const loader = new THREE.GLTFLoader();
 const dracoLoader = new THREE.DRACOLoader();
 dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
@@ -2216,6 +2265,11 @@ function updateCamera(time, delta, leadRacer) {
     camera.position.lerp(target, Math.min(1.0, 4.5 * delta));
     cameraLookAt.lerp(look, Math.min(1.0, 4.5 * delta));
     camera.lookAt(cameraLookAt);
+
+    // Keep distant boundary mountain ring horizontally centered on camera for constant horizon depth
+    if (boundaryRing) {
+        boundaryRing.position.set(camera.position.x, -70, camera.position.z);
+    }
 }
 
 function lightenColor(hex, amount) {

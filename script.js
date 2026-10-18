@@ -222,11 +222,27 @@ function resetData() {
 function loadAboutInfo() {
     const container = document.getElementById('about-content-container');
     if (container && typeof APP_INFO !== 'undefined') {
+        let creditsHtml = '';
+        if (Array.isArray(APP_INFO.credits) && APP_INFO.credits.length > 0) {
+            creditsHtml = `
+                <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 12px; text-align: left; font-size: 0.85rem; color: #bbb;">
+                    <p style="font-weight: bold; margin-bottom: 6px; color: #fff;">Asset Attributions (CC BY 4.0):</p>
+                    <ul style="padding-left: 18px; margin: 0 0 10px 0; line-height: 1.4;">
+                        ${APP_INFO.credits.map(c => `
+                            <li style="margin-bottom: 6px;">
+                                <a href="${c.url}" target="_blank" rel="noopener" style="color: #ff9800; text-decoration: underline;">"${c.title}"</a> by ${c.author} is licensed under <a href="${c.licenseUrl}" target="_blank" rel="noopener" style="color: #ff9800; text-decoration: underline;">${c.license}</a>.
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            `;
+        }
         container.innerHTML = `
             <p><strong>${APP_INFO.title}</strong></p>
             <p>${APP_INFO.version}</p>
             <br>
             <p>${APP_INFO.description}</p>
+            ${creditsHtml}
             <br>
             <p style="color:#888; font-size: 0.9rem;">${APP_INFO.copyright}</p>
         `;
@@ -258,13 +274,13 @@ function createNightSkyTexture() {
     cvs.height = 512;
     const ctx = cvs.getContext('2d');
 
-    // Top-to-bottom cartoon night sky gradient: deep navy -> twilight indigo -> rich royal purple horizon
+    // Smooth cartoon night sky gradient: deep navy zenith -> twilight indigo -> rich royal purple -> horizon plum -> seamless fog blend
     const grad = ctx.createLinearGradient(0, 0, 0, 512);
     grad.addColorStop(0.00, '#070b1e'); // Deep midnight navy at zenith
     grad.addColorStop(0.28, '#121536'); // Dark twilight blue-indigo
-    grad.addColorStop(0.55, '#24174a'); // Rich cartoon Halloween purple
+    grad.addColorStop(0.55, '#24174a'); // Rich cartoon Halloween royal purple
     grad.addColorStop(0.80, '#361d63'); // Vibrant plum-violet near horizon
-    grad.addColorStop(1.00, '#1e1136'); // Ground-blend purple
+    grad.addColorStop(1.00, '#22133d'); // Ground-blend purple (exact match with scene.fog)
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 32, 512);
 
@@ -384,7 +400,7 @@ function createRoadTexture() {
     const tex = new THREE.CanvasTexture(cvs);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(1, 80);
+    tex.repeat.set(1, 133);
     return tex;
 }
 
@@ -414,8 +430,8 @@ const stoneTex = createCryptStoneTexture();
 const landscapeGroup = new THREE.Group();
 scene.add(landscapeGroup);
 
-// 1. Haunted Road
-const roadLength = CONFIG.raceDistance + 1200;
+// 1. Haunted Road, Kerbs & Verges (Extended symmetrically so both start line and finish line look into deep fog)
+const roadLength = CONFIG.raceDistance + 4800; // 4200 + 4800 = 9000m (extends 2400m before start and 2400m after finish)
 const roadGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, roadLength);
 const roadMat = new THREE.MeshStandardMaterial({
     map: roadTex,
@@ -444,22 +460,23 @@ rightKerb.position.set(roadHalf + 1.25, 0.45, CONFIG.raceDistance / 2);
 rightKerb.receiveShadow = true;
 landscapeGroup.add(rightKerb);
 
-const vergeGeo = new THREE.BoxGeometry(340, 20, roadLength);
+const vergeWidth = 500;
+const vergeGeo = new THREE.BoxGeometry(vergeWidth, 20, roadLength);
 const vergeMat = new THREE.MeshStandardMaterial({ color: 0x19261d, roughness: 0.92 });
 
 const leftVerge = new THREE.Mesh(vergeGeo, vergeMat);
-leftVerge.position.set(-roadHalf - 2.5 - 170, -9.8, CONFIG.raceDistance / 2);
+leftVerge.position.set(-roadHalf - 2.5 - (vergeWidth / 2), -9.8, CONFIG.raceDistance / 2);
 leftVerge.receiveShadow = true;
 landscapeGroup.add(leftVerge);
 
 const rightVerge = new THREE.Mesh(vergeGeo, vergeMat);
-rightVerge.position.set(roadHalf + 2.5 + 170, -9.8, CONFIG.raceDistance / 2);
+rightVerge.position.set(roadHalf + 2.5 + (vergeWidth / 2), -9.8, CONFIG.raceDistance / 2);
 rightVerge.receiveShadow = true;
 landscapeGroup.add(rightVerge);
 
-// 3. Full Moon & Starfield
+// 3. Full Moon & Starfield (Positioned safely above bird's-eye camera while visible during racing)
 const moonGroup = new THREE.Group();
-const moonGeo = new THREE.SphereGeometry(58, 32, 32);
+const moonGeo = new THREE.SphereGeometry(60, 32, 32);
 const moonMat = new THREE.MeshBasicMaterial({ color: 0xfff5d6, fog: false });
 const moonMesh = new THREE.Mesh(moonGeo, moonMat);
 moonGroup.add(moonMesh);
@@ -483,13 +500,13 @@ moonGroup.add(haloSprite);
 moonGroup.position.set(80, 210, CONFIG.raceDistance + 550);
 scene.add(moonGroup);
 
-// Stars
-const starCount = 450;
+// Stars placed safely above aerial camera (Y: 130m - 390m) so they twinkle in the night sky during racing without clashing
+const starCount = 500;
 const starPositions = new Float32Array(starCount * 3);
 for (let i = 0; i < starCount; i++) {
-    starPositions[i * 3] = (Math.random() - 0.5) * 1400;
-    starPositions[i * 3 + 1] = 80 + Math.random() * 350;
-    starPositions[i * 3 + 2] = -200 + Math.random() * (CONFIG.raceDistance + 1000);
+    starPositions[i * 3] = (Math.random() - 0.5) * 1600;
+    starPositions[i * 3 + 1] = 130 + Math.random() * 260; // Y: 130m to 390m
+    starPositions[i * 3 + 2] = -200 + Math.random() * (CONFIG.raceDistance + 1200);
 }
 const starGeo = new THREE.BufferGeometry();
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
@@ -514,16 +531,42 @@ landscapeGroup.add(propsGroup);
 
 const jackLanternMaterials = [];
 
+// Track Siding Layout Parameters (used for siding placement and tree exclusion)
+const SIDING_INTERVAL = 120;
+const SIDING_LENGTH = 55;
+const SIDING_POS_X = 95;
+
 function buildHauntedForestCorridor(treeTemplates) {
     forestGroup.clear();
     if (!treeTemplates || treeTemplates.length === 0) return;
+
+    // Helper: place trees safely clear of track siding advertising boards (at |x|=95, z=0, 120, 240, ...)
+    function getSidingClearTreeX(isLeft, treeZ) {
+        let nearSiding = false;
+        for (let sz = 0; sz <= CONFIG.raceDistance; sz += SIDING_INTERVAL) {
+            if (Math.abs(treeZ - sz) < 52) {
+                nearSiding = true;
+                break;
+            }
+        }
+        if (nearSiding) {
+            // Place tree safely in deep forest behind the siding board (at least 35m behind siding at |x|=95)
+            return isLeft ? (-130 - Math.random() * 85) : (130 + Math.random() * 85);
+        } else {
+            // In open gaps between sidings, trees can grow naturally from verge edge outward
+            const offset = Math.random() * 135;
+            return isLeft ? (-82 - offset) : (82 + offset);
+        }
+    }
+
     for (let z = -320; z < CONFIG.raceDistance + 320; z += 96) {
         if (Math.random() > 0.15) {
             const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
             const tree = template.clone();
             const scale = 11.5 + Math.random() * 8.5;
-            const x = -82 - Math.random() * 140;
-            tree.position.set(x, 0, z + (Math.random() - 0.5) * 14);
+            const treeZ = z + (Math.random() - 0.5) * 14;
+            const x = getSidingClearTreeX(true, treeZ);
+            tree.position.set(x, 0, treeZ);
             tree.rotation.y = Math.random() * Math.PI * 2;
             tree.scale.set(scale, scale * (0.9 + Math.random() * 0.3), scale);
             forestGroup.add(tree);
@@ -532,8 +575,9 @@ function buildHauntedForestCorridor(treeTemplates) {
             const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
             const tree = template.clone();
             const scale = 11.5 + Math.random() * 8.5;
-            const x = 82 + Math.random() * 140;
-            tree.position.set(x, 0, z + (Math.random() - 0.5) * 14);
+            const treeZ = z + (Math.random() - 0.5) * 14;
+            const x = getSidingClearTreeX(false, treeZ);
+            tree.position.set(x, 0, treeZ);
             tree.rotation.y = Math.random() * Math.PI * 2;
             tree.scale.set(scale, scale * (0.9 + Math.random() * 0.3), scale);
             forestGroup.add(tree);
@@ -598,7 +642,7 @@ function buildTracksideRocks(rockTemplates) {
 }
 
 // 6. Track Sidings (Optimized with shared geometries, cached materials and textures)
-const sidingLength = 55, sidingHeight = 10, sidingDepth = 2;
+const sidingLength = SIDING_LENGTH, sidingHeight = 10, sidingDepth = 2;
 const sharedSidingBaseGeo = new THREE.BoxGeometry(sidingDepth, sidingHeight, sidingLength);
 const sharedSidingBaseMat = new THREE.MeshStandardMaterial({
     map: stoneTex,
@@ -639,12 +683,12 @@ function createTrackSiding(imagePath, x, z, side) {
     return group;
 }
 
-const sidingInterval = 120;
+const sidingInterval = SIDING_INTERVAL;
 for (let z = 0; z <= CONFIG.raceDistance; z += sidingInterval) {
     const img1 = adImages[Math.floor(Math.random() * adImages.length)];
-    landscapeGroup.add(createTrackSiding(img1, -95, z, -1));
+    landscapeGroup.add(createTrackSiding(img1, -SIDING_POS_X, z, -1));
     const img2 = adImages[Math.floor(Math.random() * adImages.length)];
-    landscapeGroup.add(createTrackSiding(img2, 95, z, 1));
+    landscapeGroup.add(createTrackSiding(img2, SIDING_POS_X, z, 1));
 }
 
 // 7. Roadside Jack-o'-Lanterns (Scattered on sides every now and then, deduplicated materials)
@@ -910,6 +954,7 @@ const MonsterModelManager = {
         }));
 
         // 2. Preload Environment tree.glb (Clean unwanted white floor plane, extract tree meshes)
+        // Attribution: "Toon Tree 02" (https://skfb.ly/JL7F) by Sergio Sotomayor is licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
         const treePromise = new Promise((resolve) => {
             loader.load(
                 'models/tree.glb',
@@ -1013,6 +1058,7 @@ const MonsterModelManager = {
         });
 
         // 4. Preload Environment rocks.glb (Isolate individual rock meshes and scatter)
+        // Attribution: "Low poly Rocks" (https://skfb.ly/pwJCw) by Logan S. is licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
         const rockPromise = new Promise((resolve) => {
             loader.load(
                 'models/rocks.glb',
@@ -1054,6 +1100,7 @@ const MonsterModelManager = {
         });
 
         // 5. Preload Environment jack-o-lantern.glb (Scattered trackside props)
+        // Attribution: "Jack-o-lantern" (https://skfb.ly/pnNOJ) by Kroko.blend is licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/)
         const jackPromise = new Promise((resolve) => {
             loader.load(
                 'models/jack-o-lantern.glb',
@@ -1583,16 +1630,12 @@ function initLeaderboardDOM() {
         const nameSpan = document.createElement('span');
         nameSpan.className = 'lb-name';
 
-        const distSpan = document.createElement('span');
-        distSpan.className = 'lb-dist';
-
         info.appendChild(nameSpan);
-        info.appendChild(distSpan);
         row.appendChild(rank);
         row.appendChild(info);
         lbContent.appendChild(row);
 
-        lbRowsCache.push({ row, rank, nameSpan, distSpan, _racerId: -1, _distText: '', _finished: false });
+        lbRowsCache.push({ row, rank, nameSpan, _racerId: -1, _isLeader: (i === 0) });
     }
 }
 
@@ -1982,11 +2025,10 @@ let cameraLookAt = new THREE.Vector3(0, 6.0, 0);
 let cinematicTarget = new THREE.Vector3();
 let cinematicLook = new THREE.Vector3();
 
-const LB_SCREEN_FRACTION = 0.33;
+const LB_SCREEN_FRACTION = 0.185;
 const RACER_PADDING = 5.5;
 const DUCK_PADDING = RACER_PADDING; // Backward-compatible alias
 const MIN_CAM_DIST_Z = 36;
-const MAX_CAM_DIST_Z = 75;
 
 const cachedBounds = {
     centerX: 0,
@@ -2027,7 +2069,61 @@ const getDuckBounds = getRacerBounds; // Backward-compatible alias
 function calcDistanceForWidth(worldWidth, screenFraction) {
     const fovRad = THREE.MathUtils.degToRad(camera.fov);
     const d = worldWidth / (screenFraction * 2 * Math.tan(fovRad / 2) * camera.aspect);
-    return Math.max(MIN_CAM_DIST_Z, Math.min(MAX_CAM_DIST_Z, d));
+    return Math.max(MIN_CAM_DIST_Z, d);
+}
+
+// Exact 3D bounding-box solver: guarantees all riders fit inside safe area for any view direction
+function calcFitDistanceForAngle(bounds, unitDir, lookPoint, safeFracX = 0.80, safeFracY = 0.82) {
+    const fovRad = THREE.MathUtils.degToRad(camera.fov);
+    const tanHalfFovY = Math.tan(fovRad / 2);
+    const tanHalfFovX = tanHalfFovY * camera.aspect;
+
+    const tanSafeX = tanHalfFovX * safeFracX;
+    const tanSafeY = tanHalfFovY * safeFracY;
+
+    // View direction vector from camera to lookPoint is -unitDir
+    const vx = -unitDir.x, vy = -unitDir.y, vz = -unitDir.z;
+
+    // Camera right vector r = v x worldUp (0, 1, 0)
+    let rx = -vz, ry = 0, rz = vx;
+    const rLen = Math.hypot(rx, rz);
+    if (rLen < 0.0001) { rx = 1; ry = 0; rz = 0; } else { rx /= rLen; rz /= rLen; }
+
+    // Camera up vector = r x v
+    const upX = ry * vz - rz * vy;
+    const upY = rz * vx - rx * vz;
+    const upZ = rx * vy - ry * vx;
+
+    // Bounding box corners around all racers with generous padding
+    const padX = 7.5;
+    const padZ = 8.5;
+    const xs = [bounds.minX - padX, bounds.maxX + padX];
+    const ys = [0.0, 9.0]; // Ground up to racer name label
+    const zs = [bounds.minZ - padZ, bounds.maxZ + padZ];
+
+    let maxDist = 38.0;
+
+    for (let i = 0; i < 2; i++) {
+        const qx = xs[i] - lookPoint.x;
+        for (let j = 0; j < 2; j++) {
+            const qy = ys[j] - lookPoint.y;
+            for (let k = 0; k < 2; k++) {
+                const qz = zs[k] - lookPoint.z;
+
+                const distAlongV = qx * vx + qy * vy + qz * vz;
+                const distAlongR = Math.abs(qx * rx + qy * ry + qz * rz);
+                const distAlongUp = Math.abs(qx * upX + qy * upY + qz * upZ);
+
+                const reqX = (distAlongR / tanSafeX) - distAlongV;
+                const reqY = (distAlongUp / tanSafeY) - distAlongV;
+
+                const req = Math.max(reqX, reqY);
+                if (req > maxDist) maxDist = req;
+            }
+        }
+    }
+
+    return maxDist;
 }
 
 function applyViewOffset() {
@@ -2044,7 +2140,6 @@ function updateCamera(time, delta, leadRacer) {
     const target = cinematicTarget, look = cinematicLook;
 
     const bounds = getRacerBounds();
-    const availableFraction = 1.0 - LB_SCREEN_FRACTION;
 
     // Move directional moonlight & non-shadow fill/rim lights along with the pack
     moonLight.position.set(45, 95, bounds.centerZ + 40);
@@ -2075,42 +2170,51 @@ function updateCamera(time, delta, leadRacer) {
         look.copy(winner.position).add(winnerCamOffset);
 
     } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
-        // Front-facing starting grid showcase camera
-        const fitDist = calcDistanceForWidth(bounds.spreadX, availableFraction);
-        target.set(bounds.centerX, Math.max(16.0, fitDist * 0.36), bounds.centerZ + fitDist * 0.95);
-        look.set(bounds.centerX, 6.0, bounds.centerZ);
+        // Front-facing starting grid showcase camera fitted to safe area
+        const lookPoint = new THREE.Vector3(bounds.centerX, 4.0, bounds.centerZ);
+        const unitDir = new THREE.Vector3(0, 0.32, 0.95).normalize();
+        const fitDist = calcFitDistanceForAngle(bounds, unitDir, lookPoint, 0.80, 0.82);
+        target.copy(lookPoint).addScaledVector(unitDir, fitDist);
+        look.copy(lookPoint);
 
     } else {
         const distRemaining = CONFIG.raceDistance - leadRacer.position.z;
-        const fitDist = calcDistanceForWidth(bounds.spreadX, availableFraction);
-
         const finishApproachDist = CONFIG.raceDistance * 0.05; // 5% from finish line (210m for 4200m track)
 
         if (distRemaining <= finishApproachDist) {
-            // High aerial bird's-eye view framing all 8 karts and the finish line
-            const birdsEyeHeight = Math.max(68.0, bounds.spreadX * 0.72, bounds.spreadZ * 0.82);
-            const birdsEyeDistZ = Math.max(50.0, bounds.spreadZ * 0.65);
+            // High aerial bird's-eye view framing all 8 karts and the finish line from optimal broadcast height
+            const birdsEyeHeight = Math.min(82.0, Math.max(56.0, bounds.spreadZ * 0.32 + 36.0));
+            const birdsEyeDistZ = Math.min(88.0, Math.max(50.0, bounds.spreadZ * 0.35 + 26.0));
             target.set(bounds.centerX, birdsEyeHeight, bounds.centerZ - birdsEyeDistZ);
-            look.set(bounds.centerX, 2.5, Math.min(CONFIG.raceDistance + 10, bounds.centerZ + 25));
+            look.set(bounds.centerX, 2.5, Math.min(CONFIG.raceDistance + 10, bounds.centerZ + 35));
         } else {
             if (camAngle === 0) {
-                const camHeight = Math.max(13.0, fitDist * 0.30);
-                target.set(bounds.centerX, camHeight, leadRacer.position.z + fitDist * 0.90);
-                look.set(bounds.centerX, 6.0, leadRacer.position.z);
+                // Front chase broadcast camera
+                const lookPoint = new THREE.Vector3(bounds.centerX, 4.0, bounds.centerZ * 0.70 + leadRacer.position.z * 0.30);
+                const unitDir = new THREE.Vector3(0, 0.32, 0.95).normalize();
+                const fitDist = calcFitDistanceForAngle(bounds, unitDir, lookPoint, 0.80, 0.82);
+                target.copy(lookPoint).addScaledVector(unitDir, fitDist);
+                look.copy(lookPoint);
             } else if (camAngle === 1) {
-                const camHeight = Math.max(18.0, fitDist * 0.44);
-                target.set(bounds.centerX, camHeight, bounds.centerZ + fitDist * 1.0);
-                look.set(bounds.centerX, 5.8, bounds.centerZ);
+                // High elevated overview camera
+                const lookPoint = new THREE.Vector3(bounds.centerX, 3.5, bounds.centerZ);
+                const unitDir = new THREE.Vector3(0, 0.58, 0.81).normalize();
+                const fitDist = calcFitDistanceForAngle(bounds, unitDir, lookPoint, 0.80, 0.82);
+                target.copy(lookPoint).addScaledVector(unitDir, fitDist);
+                look.copy(lookPoint);
             } else {
-                const camHeight = Math.max(13.0, fitDist * 0.30);
-                target.set(bounds.minX - fitDist * 0.36, camHeight, leadRacer.position.z + fitDist * 0.60);
-                look.set(bounds.centerX + 5, 6.0, leadRacer.position.z);
+                // Right-side 3/4 dynamic broadcast camera (angled across track to keep pack in open center-right safe area)
+                const lookPoint = new THREE.Vector3(bounds.centerX - 2.0, 4.0, bounds.centerZ);
+                const unitDir = new THREE.Vector3(0.48, 0.35, 0.80).normalize();
+                const fitDist = calcFitDistanceForAngle(bounds, unitDir, lookPoint, 0.80, 0.82);
+                target.copy(lookPoint).addScaledVector(unitDir, fitDist);
+                look.copy(lookPoint);
             }
         }
     }
 
-    camera.position.lerp(target, Math.min(1.0, 5.0 * delta));
-    cameraLookAt.lerp(look, Math.min(1.0, 5.0 * delta));
+    camera.position.lerp(target, Math.min(1.0, 4.5 * delta));
+    cameraLookAt.lerp(look, Math.min(1.0, 4.5 * delta));
     camera.lookAt(cameraLookAt);
 }
 
@@ -2152,24 +2256,10 @@ function updateUI(leadRacer, sortedRacers, time) {
             cache._racerId = d.id;
         }
 
-        const isFinished = d.finished;
-        let distText = '';
-        if (isFinished) {
-            distText = 'FINISHED';
-        } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
-            distText = 'READY';
-        } else {
-            distText = (i === 0) ? 'LEADER' : `+${Math.floor(leadRacer.position.z - d.position.z)}m`;
-        }
-
-        if (cache._distText !== distText || cache._finished !== isFinished) {
-            if (isFinished) {
-                cache.distSpan.innerHTML = `<span style="color:#c042ff">FINISHED</span>`;
-            } else {
-                cache.distSpan.textContent = distText;
-            }
-            cache._distText = distText;
-            cache._finished = isFinished;
+        const isLeader = (i === 0);
+        if (cache._isLeader !== isLeader) {
+            cache.row.className = isLeader ? 'lb-row leader' : 'lb-row';
+            cache._isLeader = isLeader;
         }
     }
 

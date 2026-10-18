@@ -118,3 +118,14 @@ The test runner launches headless Microsoft Edge via Chrome DevTools Protocol (C
 * **Audio:** Web Audio Horrific Synth Engine + looped ambient audio
 * **Fonts:** Creepster, Rajdhani, Roboto Condensed
 * **Compatibility:** Compatible with all modern desktop and mobile browsers, zero build step, 100% static hosting on GitHub Pages.
+
+---
+
+## Third-Party 3D Assets & Attributions
+
+The following third-party 3D environment assets are used under the Creative Commons Attribution (CC BY 4.0) license:
+
+* "Jack-o-lantern" (https://skfb.ly/pnNOJ) by Kroko.blend is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+* "Low poly Rocks" (https://skfb.ly/pwJCw) by Logan S. is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+* "Toon Tree 02" (https://skfb.ly/JL7F) by Sergio Sotomayor is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+

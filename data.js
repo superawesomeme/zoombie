@@ -4,6 +4,29 @@ const APP_INFO = {
     title: "Zoombie Racing",
     version: "Version 1.0 - Halloween Edition",
     description: "Developed for Picket Piece Social Club. This is a real-time 3D Halloween monster racing simulation powered by Three.js and WebGL. Features include articulated 3D Zoombie characters and live telemetry tracking.",
+    credits: [
+        {
+            title: "Jack-o-lantern",
+            url: "https://skfb.ly/pnNOJ",
+            author: "Kroko.blend",
+            license: "Creative Commons Attribution",
+            licenseUrl: "http://creativecommons.org/licenses/by/4.0/"
+        },
+        {
+            title: "Low poly Rocks",
+            url: "https://skfb.ly/pwJCw",
+            author: "Logan S.",
+            license: "Creative Commons Attribution",
+            licenseUrl: "http://creativecommons.org/licenses/by/4.0/"
+        },
+        {
+            title: "Toon Tree 02",
+            url: "https://skfb.ly/JL7F",
+            author: "Sergio Sotomayor",
+            license: "Creative Commons Attribution",
+            licenseUrl: "http://creativecommons.org/licenses/by/4.0/"
+        }
+    ],
     copyright: `© ${new Date().getFullYear()} Shaun Daubney. All rights reserved.`
 };
 

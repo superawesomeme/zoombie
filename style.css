@@ -16,8 +16,8 @@
 body {
     margin: 0;
     overflow: hidden;
-    /* Rich vertical purple-to-navy gradient night sky */
-    background: linear-gradient(180deg, #2c154f 0%, #150a28 50%, #07030e 100%);
+    /* Deep midnight purple night sky matching scene background and fog */
+    background: #22133d;
     font-family: 'Rajdhani', sans-serif;
     user-select: none;
     color: white;

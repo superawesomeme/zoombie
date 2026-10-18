@@ -267,34 +267,15 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.98;
 container.appendChild(renderer.domElement);
 
-// --- PROCEDURAL PURPLE / NAVY GRADIENT NIGHT SKY ---
-function createNightSkyTexture() {
-    const cvs = document.createElement('canvas');
-    cvs.width = 32;
-    cvs.height = 512;
-    const ctx = cvs.getContext('2d');
+// Deep midnight purple starry night sky background matching scene fog
+const SKY_COLOR = 0x22133d;
+scene.background = new THREE.Color(SKY_COLOR);
+renderer.setClearColor(SKY_COLOR, 1);
 
-    // Smooth cartoon night sky gradient: deep navy zenith -> twilight indigo -> rich royal purple -> horizon plum -> seamless fog blend
-    const grad = ctx.createLinearGradient(0, 0, 0, 512);
-    grad.addColorStop(0.00, '#070b1e'); // Deep midnight navy at zenith
-    grad.addColorStop(0.28, '#121536'); // Dark twilight blue-indigo
-    grad.addColorStop(0.55, '#24174a'); // Rich cartoon Halloween royal purple
-    grad.addColorStop(0.80, '#361d63'); // Vibrant plum-violet near horizon
-    grad.addColorStop(1.00, '#22133d'); // Ground-blend purple (exact match with scene.fog)
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 32, 512);
-
-    const tex = new THREE.CanvasTexture(cvs);
-    tex.encoding = THREE.sRGBEncoding;
-    return tex;
-}
-
-scene.background = createNightSkyTexture();
-
-// Distance Fog matching the deep midnight purple horizon for seamless infinite fade
-const FOG_COLOR = 0x22133d;
+// Distance Fog matching the deep midnight purple sky for seamless infinite horizon fade
+const FOG_COLOR = SKY_COLOR;
 const FOG_NEAR = 180;
-const FOG_FAR = 1250;
+const FOG_FAR = 1200;
 scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR, FOG_FAR);
 
 // --- BALANCED CARTOON NIGHT LIGHTING (Not over-exposed, strong colour separation) ---
@@ -505,64 +486,19 @@ moonGroup.position.set(80, 210, CONFIG.raceDistance + 550);
 scene.add(moonGroup);
 
 // Stars placed safely above aerial camera (Y: 130m - 390m) so they twinkle in the night sky during racing without clashing
-const starCount = 500;
+const starCount = 700;
 const starPositions = new Float32Array(starCount * 3);
 for (let i = 0; i < starCount; i++) {
-    starPositions[i * 3] = (Math.random() - 0.5) * 1600;
+    starPositions[i * 3] = (Math.random() - 0.5) * 2200;
     starPositions[i * 3 + 1] = 130 + Math.random() * 260; // Y: 130m to 390m
-    starPositions[i * 3 + 2] = -200 + Math.random() * (CONFIG.raceDistance + 1200);
+    starPositions[i * 3 + 2] = -1400 + Math.random() * (CONFIG.raceDistance + 2800);
 }
 const starGeo = new THREE.BufferGeometry();
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
 const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2.3, fog: false });
 scene.add(new THREE.Points(starGeo, starMat));
 
-// 4. Low-Poly Boundary Mountain Ring (Static jagged Halloween wasteland horizon ridge)
-const ringRadiusBottom = 1050;
-const ringRadiusTop = 1200;
-const ringHeight = 320;
-const ringSegments = 56;
-const ringGeo = new THREE.CylinderGeometry(ringRadiusTop, ringRadiusBottom, ringHeight, ringSegments, 1, true);
-
-const posAttr = ringGeo.attributes.position;
-for (let i = 0; i < posAttr.count; i++) {
-    const y = posAttr.getY(i);
-    if (y > 0) { // Top edge vertices forming the jagged mountain silhouette
-        const x = posAttr.getX(i);
-        const z = posAttr.getZ(i);
-        const angle = Math.atan2(z, x);
-
-        // Stylized cartoon Halloween wasteland jagged ridges & craggy silhouettes
-        const noise = Math.sin(angle * 3.0) * 45.0
-                    + Math.sin(angle * 7.0 + 1.2) * 32.0
-                    + Math.cos(angle * 13.0) * 20.0
-                    + Math.sin(angle * 21.0 + 2.4) * 14.0;
-
-        // Sharp needle spires and barren wasteland peaks
-        const sharpPeak = Math.pow(Math.abs(Math.sin(angle * 5.0 + 0.8)), 2.2) * 65.0;
-        const craggyPeak = Math.pow(Math.abs(Math.cos(angle * 9.0 + 1.7)), 1.8) * 40.0;
-
-        const totalDisplacement = noise + sharpPeak + craggyPeak;
-        posAttr.setY(i, y + totalDisplacement);
-
-        // Slanted ridge tops flaring slightly outward towards outer fog boundary
-        const rFactor = 1.0 + (totalDisplacement / 320.0) * 0.04;
-        posAttr.setX(i, x * rFactor);
-        posAttr.setZ(i, z * rFactor);
-    }
-}
-ringGeo.computeVertexNormals();
-
-const ringMat = new THREE.MeshLambertMaterial({
-    color: 0x1a0f2e, // Deep midnight purple complementing track and verge surfaces
-    flatShading: true,
-    side: THREE.BackSide
-});
-const boundaryRing = new THREE.Mesh(ringGeo, ringMat);
-boundaryRing.position.set(camera.position.x, -70, camera.position.z);
-scene.add(boundaryRing);
-
-// 5. GLTF & DRACO Loaders configured for Draco-compressed meshes
+// 4. GLTF & DRACO Loaders configured for Draco-compressed meshes
 const loader = new THREE.GLTFLoader();
 const dracoLoader = new THREE.DRACOLoader();
 dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
@@ -2265,11 +2201,6 @@ function updateCamera(time, delta, leadRacer) {
     camera.position.lerp(target, Math.min(1.0, 4.5 * delta));
     cameraLookAt.lerp(look, Math.min(1.0, 4.5 * delta));
     camera.lookAt(cameraLookAt);
-
-    // Keep distant boundary mountain ring horizontally centered on camera for constant horizon depth
-    if (boundaryRing) {
-        boundaryRing.position.set(camera.position.x, -70, camera.position.z);
-    }
 }
 
 function lightenColor(hex, amount) {

@@ -287,7 +287,7 @@ body {
     top: 0; left: 0;
     width: 100%;
     height: calc(var(--ui-scale) * 0.375);
-    background: linear-gradient(90deg, var(--broadcast-accent), #9c27b0, var(--broadcast-ecto));
+    background: linear-gradient(90deg, #8f12ec, #e153f9, var(--broadcast-white));
 }
 
 .start-screen-logo {

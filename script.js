@@ -680,15 +680,15 @@ function buildRoadsideProps(jackTemplate) {
     }
 }
 
-// 8. Start & Finish Line Gothic Archway
+// 8. Start & Finish Line Gothic Archway (Purple / Lemon Check)
 const finishGroup = new THREE.Group();
 const checkCanvas = document.createElement('canvas');
 checkCanvas.width = 576;
 checkCanvas.height = 64;
 const checkCtx = checkCanvas.getContext('2d');
-checkCtx.fillStyle = '#180d28';
+checkCtx.fillStyle = '#260b42'; // Deep gothic purple
 checkCtx.fillRect(0, 0, 576, 64);
-checkCtx.fillStyle = '#c042ff';
+checkCtx.fillStyle = '#fff042'; // Vibrant lemon yellow
 for (let y = 0; y < 2; y++) {
     for (let x = 0; x < 18; x++) {
         if ((x + y) % 2 === 0) checkCtx.fillRect(x * 32, y * 32, 32, 32);
@@ -696,11 +696,12 @@ for (let y = 0; y < 2; y++) {
 }
 const checkTex = new THREE.CanvasTexture(checkCanvas);
 checkTex.magFilter = THREE.NearestFilter;
+checkTex.encoding = THREE.sRGBEncoding;
 
 const archPillarX = (CONFIG.roadWidth / 2) + 3.0;
 const fBanner = new THREE.Mesh(
     new THREE.BoxGeometry(CONFIG.roadWidth + 12, 8.5, 2),
-    new THREE.MeshStandardMaterial({ map: checkTex, roughness: 0.6, emissive: 0x220538 })
+    new THREE.MeshStandardMaterial({ map: checkTex, roughness: 0.6, emissive: 0x160726 })
 );
 fBanner.position.set(0, 24, CONFIG.raceDistance);
 fBanner.castShadow = true;
@@ -717,7 +718,7 @@ scene.add(finishGroup);
 
 // Road Start & Finish Paint Strips
 const lineStripGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, 3.5);
-const startLineMat = new THREE.MeshBasicMaterial({ map: checkTex, transparent: true, opacity: 0.90 });
+const startLineMat = new THREE.MeshBasicMaterial({ map: checkTex, transparent: true, opacity: 0.95, toneMapped: false });
 const startLineStrip = new THREE.Mesh(lineStripGeo, startLineMat);
 startLineStrip.rotation.x = -Math.PI / 2;
 startLineStrip.position.set(0, 0.04, 0);
@@ -1289,26 +1290,44 @@ class Zoombie {
         const ctx = cvs.getContext('2d');
         const mainColor = '#' + this.color.toString(16).padStart(6, '0');
 
+        // Slanted backing container
         ctx.beginPath();
-        ctx.moveTo(30, 0); ctx.lineTo(w, 0); ctx.lineTo(w - 30, h); ctx.lineTo(0, h);
-        ctx.fillStyle = "rgba(18, 10, 32, 0.92)";
+        ctx.moveTo(28, 0); ctx.lineTo(w, 0); ctx.lineTo(w - 28, h); ctx.lineTo(0, h);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(14, 8, 24, 0.94)";
         ctx.fill();
 
+        // Vivid color accent tab matching the broadcast leaderboard rank color
         ctx.beginPath();
-        ctx.moveTo(30, 0); ctx.lineTo(62, 0); ctx.lineTo(32, h); ctx.lineTo(0, h);
+        ctx.moveTo(28, 0); ctx.lineTo(68, 0); ctx.lineTo(40, h); ctx.lineTo(0, h);
+        ctx.closePath();
         ctx.fillStyle = mainColor;
         ctx.fill();
+
+        // Accent baseline stripe in the racer's color across the bottom edge
+        ctx.beginPath();
+        ctx.moveTo(0, h - 3); ctx.lineTo(w - 28, h - 3);
+        ctx.strokeStyle = mainColor;
+        ctx.lineWidth = 6;
+        ctx.stroke();
 
         ctx.fillStyle = "#ffffff";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.shadowColor = "rgba(0,0,0,0.9)";
-        ctx.shadowBlur = 4;
-        ctx.font = "bold 82px 'Rajdhani'";
-        ctx.fillText(`${this.id + 1}`, 96, h / 2 + 2);
+        ctx.shadowColor = "rgba(0,0,0,0.95)";
+        ctx.shadowBlur = 6;
+        ctx.font = "bold 84px 'Rajdhani'";
+        ctx.fillText(`${this.id + 1}`, 104, h / 2 + 1);
 
+        const tex = new THREE.CanvasTexture(cvs);
+        tex.encoding = THREE.sRGBEncoding;
         const sprite = new THREE.Sprite(
-            new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cvs), depthWrite: false, depthTest: true })
+            new THREE.SpriteMaterial({
+                map: tex,
+                toneMapped: false,
+                depthWrite: false,
+                depthTest: true
+            })
         );
         sprite.position.set(0, 14.2, 0);
         sprite.scale.set(6.2, 4.8, 1);

@@ -406,8 +406,148 @@ function createCryptStoneTexture() {
     return tex;
 }
 
+function createWastelandGrassTexture() {
+    const cvs = document.createElement('canvas');
+    cvs.width = 512;
+    cvs.height = 512;
+    const ctx = cvs.getContext('2d');
+
+    // 1. Base dark haunted moss & soil ground
+    ctx.fillStyle = '#162417';
+    ctx.fillRect(0, 0, 512, 512);
+
+    // 2. Seamless wrapped soft organic patches of decayed earth, boggy moss & haunted purple undertones
+    function drawWrapBlob(cx, cy, r, color) {
+        for (let ox of [-512, 0, 512]) {
+            for (let oy of [-512, 0, 512]) {
+                const x = cx + ox;
+                const y = cy + oy;
+                if (x + r < 0 || x - r > 512 || y + r < 0 || y - r > 512) continue;
+                const radGrad = ctx.createRadialGradient(x, y, 0, x, y, r);
+                radGrad.addColorStop(0, color);
+                radGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = radGrad;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
+    // Decayed dark soil patches
+    for (let i = 0; i < 45; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const r = 35 + Math.random() * 55;
+        drawWrapBlob(x, y, r, 'rgba(20, 14, 26, 0.48)');
+    }
+
+    // Rich mossy green patches
+    for (let i = 0; i < 55; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const r = 30 + Math.random() * 60;
+        drawWrapBlob(x, y, r, 'rgba(34, 58, 32, 0.52)');
+    }
+
+    // Eerie sickly-lichen patches
+    for (let i = 0; i < 30; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const r = 20 + Math.random() * 40;
+        drawWrapBlob(x, y, r, 'rgba(50, 78, 44, 0.35)');
+    }
+
+    // Haunted purple undertones
+    for (let i = 0; i < 25; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const r = 25 + Math.random() * 45;
+        drawWrapBlob(x, y, r, 'rgba(40, 22, 54, 0.28)');
+    }
+
+    // 3. Dense organic stippling & fine soil grain
+    for (let i = 0; i < 20000; i++) {
+        const x = Math.floor(Math.random() * 512);
+        const y = Math.floor(Math.random() * 512);
+        const rand = Math.random();
+        if (rand < 0.35) {
+            ctx.fillStyle = 'rgba(10, 18, 12, 0.38)';
+        } else if (rand < 0.70) {
+            ctx.fillStyle = 'rgba(42, 68, 38, 0.30)';
+        } else if (rand < 0.90) {
+            ctx.fillStyle = 'rgba(65, 102, 58, 0.24)';
+        } else {
+            ctx.fillStyle = 'rgba(50, 32, 65, 0.22)';
+        }
+        ctx.fillRect(x, y, 2, 2);
+    }
+
+    // 4. Stylized cartoon grass clumps (with seamless boundary wrapping)
+    function drawGrassClump(cx, cy, count, baseLen) {
+        for (let ox of [-512, 0, 512]) {
+            for (let oy of [-512, 0, 512]) {
+                const bx = cx + ox;
+                const by = cy + oy;
+                if (bx < -40 || bx > 552 || by < -40 || by > 552) continue;
+
+                for (let b = 0; b < count; b++) {
+                    const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.1;
+                    const len = baseLen * (0.75 + Math.random() * 0.5);
+                    const tipX = bx + Math.cos(angle) * len;
+                    const tipY = by + Math.sin(angle) * len;
+                    const cpX = bx + Math.cos(angle + (Math.random() - 0.5) * 0.4) * (len * 0.5);
+                    const cpY = by + Math.sin(angle) * (len * 0.5);
+
+                    // Blade dark shadow / base
+                    ctx.strokeStyle = 'rgba(12, 22, 14, 0.80)';
+                    ctx.lineWidth = 2.4;
+                    ctx.beginPath();
+                    ctx.moveTo(bx, by);
+                    ctx.quadraticCurveTo(cpX, cpY, tipX, tipY);
+                    ctx.stroke();
+
+                    // Blade midtone green
+                    ctx.strokeStyle = Math.random() > 0.4 ? 'rgba(55, 92, 50, 0.85)' : 'rgba(72, 115, 62, 0.80)';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(bx, by);
+                    ctx.quadraticCurveTo(cpX, cpY, tipX, tipY);
+                    ctx.stroke();
+
+                    // Tiny highlight at the tip
+                    ctx.fillStyle = 'rgba(110, 165, 95, 0.75)';
+                    ctx.fillRect(tipX - 0.5, tipY - 0.5, 1.5, 1.5);
+                }
+            }
+        }
+    }
+
+    // Scatter tufts of wild cartoon grass across the tile
+    for (let i = 0; i < 340; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const bladeCount = 3 + Math.floor(Math.random() * 4);
+        const bladeLen = 9 + Math.random() * 11;
+        drawGrassClump(x, y, bladeCount, bladeLen);
+    }
+
+    // 5. Build Texture with Repeat Wrapping and Anisotropic Filtering
+    const tex = new THREE.CanvasTexture(cvs);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    // Verge is 1400m wide and 9000m long: 20m x 20m per tile gives isotropic 1:1 square ratio
+    tex.repeat.set(70, 450);
+    tex.encoding = THREE.sRGBEncoding;
+    if (renderer && renderer.capabilities) {
+        tex.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+    }
+    return tex;
+}
+
 const roadTex = createRoadTexture();
 const stoneTex = createCryptStoneTexture();
+const grassTex = createWastelandGrassTexture();
 
 /**
  * HAUNTED ROAD, MOON, STARS & INSTANCED ENVIRONMENT
@@ -447,7 +587,11 @@ landscapeGroup.add(rightKerb);
 
 const vergeWidth = 1400;
 const vergeGeo = new THREE.BoxGeometry(vergeWidth, 20, roadLength);
-const vergeMat = new THREE.MeshStandardMaterial({ color: 0x19261d, roughness: 0.92 });
+const vergeMat = new THREE.MeshStandardMaterial({
+    map: grassTex,
+    roughness: 0.88,
+    metalness: 0.05
+});
 
 const leftVerge = new THREE.Mesh(vergeGeo, vergeMat);
 leftVerge.position.set(-roadHalf - 2.5 - (vergeWidth / 2), -9.8, CONFIG.raceDistance / 2);

@@ -662,7 +662,7 @@ const jackLanternMaterials = [];
 
 // Track Siding Layout Parameters (used for siding placement and tree exclusion)
 const SIDING_INTERVAL = 120;
-const SIDING_LENGTH = 55;
+const SIDING_LENGTH = 82.5; // Increased by 50% from 55
 const SIDING_POS_X = 95;
 
 function buildHauntedForestCorridor(treeTemplates) {
@@ -673,7 +673,7 @@ function buildHauntedForestCorridor(treeTemplates) {
     function getSidingClearTreeX(isLeft, treeZ) {
         let nearSiding = false;
         for (let sz = 0; sz <= CONFIG.raceDistance; sz += SIDING_INTERVAL) {
-            if (Math.abs(treeZ - sz) < 52) {
+            if (Math.abs(treeZ - sz) < 50) {
                 nearSiding = true;
                 break;
             }
@@ -771,14 +771,14 @@ function buildTracksideRocks(rockTemplates) {
 }
 
 // 6. Track Sidings (Optimized with shared geometries, cached materials and textures)
-const sidingLength = SIDING_LENGTH, sidingHeight = 10, sidingDepth = 2;
+const sidingLength = SIDING_LENGTH, sidingHeight = 15, sidingDepth = 3;
 const sharedSidingBaseGeo = new THREE.BoxGeometry(sidingDepth, sidingHeight, sidingLength);
 const sharedSidingBaseMat = new THREE.MeshStandardMaterial({
     map: stoneTex,
     roughness: 0.88,
     color: 0x605673
 });
-const sharedSidingFaceGeo = new THREE.PlaneGeometry(sidingLength - 2, sidingHeight - 2);
+const sharedSidingFaceGeo = new THREE.PlaneGeometry(sidingLength - 3, sidingHeight - 3);
 
 const adImages = [
     "images/sidings/1.jpg", "images/sidings/2.jpg", "images/sidings/3.jpg",

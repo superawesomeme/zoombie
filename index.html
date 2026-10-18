@@ -6,6 +6,8 @@
     <title>Zoombie Racing Simulator</title>
     
     <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Rajdhani:wght@500;600;700&family=Roboto+Condensed:wght@400;700&display=swap" rel="stylesheet">
 
     <link rel="apple-touch-icon" sizes="180x180" href="images/icons/apple-touch-icon.png">
@@ -16,6 +18,11 @@
     <link rel="shortcut icon" href="images/icons/favicon.ico">
 </head>
 <body>
+
+    <!-- Font preload warmup so Creepster glyphs are downloaded and ready for countdown -->
+    <div style="font-family: 'Creepster'; position: absolute; left: -9999px; top: -9999px; opacity: 0.01; pointer-events: none;" aria-hidden="true">
+        0 1 2 3 GO
+    </div>
 
     <div id="canvas-container"></div>
     
@@ -51,7 +58,7 @@
             </div>
 
             <div class="preview-box">
-                <div id="duck-preview" class="preview-grid"></div>
+                <div id="racer-preview" class="preview-grid"></div>
             </div>
 
             <div class="button-row">

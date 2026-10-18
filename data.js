@@ -33,41 +33,41 @@ const DEFAULT_RACES = [
     {
         id: "race_1",
         name: "Walworth Wasteland",
-        ducks: ["Justin Bleeder", "Jack O'Chan", "King Tut Tut Tut", "Billy Bolts", "Boo Radley", "Hermione Danger", "Tyson Furry", "Bony Tyler"]
+        racers: ["Justin Bleeder", "Jack O'Chan", "King Tut Tut Tut", "Billy Bolts", "Boo Radley", "Hermione Danger", "Tyson Furry", "Bony Tyler"]
     },
     {
         id: "race_2",
         name: "Locksbridge Limbo",
-        ducks: ["Vlad the Inhaler", "Pump N'Grind", "Pharaoh Williams", "Boris Car-loff", "Sheet Faced", "Blair Twitch", "Hairy Potter", "Skelly Kelly"]
+        racers: ["Vlad the Inhaler", "Pump N'Grind", "Pharaoh Williams", "Boris Car-loff", "Sheet Faced", "Blair Twitch", "Hairy Potter", "Skelly Kelly"]
     },
     {
         id: "race_3",
         name: "Deadmouse Derby",
-        ducks: ["Blood Pitt", "Soup Erkins", "Mummy Mia", "Stitches Get Riches", "Ghost Malone", "Erma Creep", "Barking Mad", "The Bone Ranger"]
+        racers: ["Blood Pitt", "Soup Erkins", "Mummy Mia", "Stitches Get Riches", "Ghost Malone", "Erma Creep", "Barking Mad", "The Bone Ranger"]
     },
     {
         id: "race_4",
         name: "Harroway Haunt",
-        ducks: ["Drac Black", "Gourd-on Ramsay", "Tomb Hanks", "Patchwork Pete", "Paranorman", "Wanda Rection", "Lycan Subscribe", "Deaddy Mercury"]
+        racers: ["Drac Black", "Gourd-on Ramsay", "Tomb Hanks", "Patchwork Pete", "Paranorman", "Wanda Rection", "Lycan Subscribe", "Deaddy Mercury"]
     },
     {
         id: "race_5",
         name: "Terror Valley Rally",
-        ducks: ["Count Down", "Patch Adams", "Gauze N' Roses", "Professor Green", "Ghoulia Roberts", "Witch and Famous", "Claw-dia Winkleman", "Indiana Bones"]
+        racers: ["Count Down", "Patch Adams", "Gauze N' Roses", "Professor Green", "Ghoulia Roberts", "Witch and Famous", "Claw-dia Winkleman", "Indiana Bones"]
     },
     {
         id: "race_6",
         name: "Finkley Fright Night",
-        ducks: ["Fangs For Nothing", "Veg Ur Bets", "Curse-tian Bale", "Screw Loose", "Spectre Gadget", "Hagatha Christie", "Luna Tick", "Napoleon Bonesapart"]
+        racers: ["Fangs For Nothing", "Veg Ur Bets", "Curse-tian Bale", "Screw Loose", "Spectre Gadget", "Hagatha Christie", "Luna Tick", "Napoleon Bonesapart"]
     },
     {
         id: "race_7",
         name: "Harroway Hell",
-        ducks: ["Will Stake-speare", "Joe Squash", "Minnie the Sphinx", "Igor Beaver", "Kerri-fying", "Claire Voyant", "Mane Man", "Skull Dougery"]
+        racers: ["Will Stake-speare", "Joe Squash", "Minnie the Sphinx", "Igor Beaver", "Kerri-fying", "Claire Voyant", "Mane Man", "Skull Dougery"]
     },
     {
         id: "race_8",
         name: "Lost Soul-cial Club Cup",
-        ducks: ["Batasha", "Butternut Stu", "Shaun the Shriek", "Odds N'Bens", "Hollow Hannah", "Hexy Becky", "Scarahhh Howlaway", "Craze Ann-atomy"]
+        racers: ["Batasha", "Butternut Stu", "Shaun the Shriek", "Odds N'Bens", "Hollow Hannah", "Hexy Becky", "Scarahhh Howlaway", "Craze Ann-atomy"]
     }
 ];

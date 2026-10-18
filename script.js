@@ -2,9 +2,10 @@
  * CONFIGURATION & DATA MANAGEMENT
  */
 const CONFIG = {
-    duckCount: 8,
-    raceDistance: 1600,
-    targetDuration: 96,
+    racerCount: 8,
+    duckCount: 8, // legacy alias
+    raceDistance: 4200,
+    targetDuration: 92,
     roadWidth: 120,
     racerScale: 7.2
 };
@@ -30,6 +31,11 @@ const COLORS = [
 ];
 
 const STORAGE_KEY = 'zoombieRaceData_v2';
+
+// Preload Creepster font immediately so the countdown glyphs are ready in memory
+if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
+    document.fonts.load("200px 'Creepster'").catch(e => console.warn("Creepster preload:", e));
+}
 
 // App State
 let storedRaces = [];
@@ -198,7 +204,7 @@ function loadRaceData() {
         storedRaces = [];
     }
     populateRaceSelector();
-    updateDuckPreview();
+    updateRacerPreview();
 }
 
 function saveRaceData() {
@@ -511,15 +517,13 @@ const jackLanternMaterials = [];
 function buildHauntedForestCorridor(treeTemplates) {
     forestGroup.clear();
     if (!treeTemplates || treeTemplates.length === 0) return;
-    // Reduced number of trees by half (step 52 instead of 26)
-    for (let z = -320; z < CONFIG.raceDistance + 320; z += 52) {
+    for (let z = -320; z < CONFIG.raceDistance + 320; z += 96) {
         if (Math.random() > 0.15) {
             const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
             const tree = template.clone();
-            // Tripled size: 10.8 to 18.6
-            const scale = 10.8 + Math.random() * 7.8;
+            const scale = 11.5 + Math.random() * 8.5;
             const x = -82 - Math.random() * 140;
-            tree.position.set(x, 0, z + (Math.random() - 0.5) * 12);
+            tree.position.set(x, 0, z + (Math.random() - 0.5) * 14);
             tree.rotation.y = Math.random() * Math.PI * 2;
             tree.scale.set(scale, scale * (0.9 + Math.random() * 0.3), scale);
             forestGroup.add(tree);
@@ -527,10 +531,9 @@ function buildHauntedForestCorridor(treeTemplates) {
         if (Math.random() > 0.15) {
             const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
             const tree = template.clone();
-            // Tripled size: 10.8 to 18.6
-            const scale = 10.8 + Math.random() * 7.8;
+            const scale = 11.5 + Math.random() * 8.5;
             const x = 82 + Math.random() * 140;
-            tree.position.set(x, 0, z + (Math.random() - 0.5) * 12);
+            tree.position.set(x, 0, z + (Math.random() - 0.5) * 14);
             tree.rotation.y = Math.random() * Math.PI * 2;
             tree.scale.set(scale, scale * (0.9 + Math.random() * 0.3), scale);
             forestGroup.add(tree);
@@ -544,24 +547,21 @@ function buildTracksideGraves(graveRoot) {
     const graveBox = new THREE.Box3().setFromObject(graveRoot);
     const graveMinY = graveBox.min.y;
 
-    // Reduced number of graves by half (step 128 instead of 64)
-    for (let z = -120; z < CONFIG.raceDistance + 120; z += 128) {
+    for (let z = -120; z < CONFIG.raceDistance + 120; z += 180) {
         if (Math.random() > 0.20) {
             const clone = graveRoot.clone(true);
-            // Doubled size: 2.6 to 3.8
             const scale = 2.6 + Math.random() * 1.2;
             const x = -64 - Math.random() * 18;
-            clone.position.set(x, -graveMinY * scale, z + (Math.random() - 0.5) * 10);
+            clone.position.set(x, -graveMinY * scale, z + (Math.random() - 0.5) * 12);
             clone.rotation.set((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.2);
             clone.scale.setScalar(scale);
             gravesGroup.add(clone);
         }
         if (Math.random() > 0.20) {
             const clone = graveRoot.clone(true);
-            // Doubled size: 2.6 to 3.8
             const scale = 2.6 + Math.random() * 1.2;
             const x = 64 + Math.random() * 18;
-            clone.position.set(x, -graveMinY * scale, z + (Math.random() - 0.5) * 10);
+            clone.position.set(x, -graveMinY * scale, z + (Math.random() - 0.5) * 12);
             clone.rotation.set((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.2);
             clone.scale.setScalar(scale);
             gravesGroup.add(clone);
@@ -573,13 +573,13 @@ function buildTracksideRocks(rockTemplates) {
     rocksGroup.clear();
     if (!rockTemplates || rockTemplates.length === 0) return;
     // Scatter isolated rock meshes sporadically between the graves along the verge
-    for (let z = -140; z < CONFIG.raceDistance + 140; z += 38) {
+    for (let z = -140; z < CONFIG.raceDistance + 140; z += 80) {
         if (Math.random() > 0.38) {
             const template = rockTemplates[Math.floor(Math.random() * rockTemplates.length)];
             const rock = template.clone();
-            const scale = 2.4 + Math.random() * 1.8;
+            const scale = 2.6 + Math.random() * 2.0;
             const x = -63.5 - Math.random() * 22;
-            rock.position.set(x, 0, z + (Math.random() - 0.5) * 12);
+            rock.position.set(x, 0, z + (Math.random() - 0.5) * 14);
             rock.rotation.set((Math.random() - 0.5) * 0.3, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.3);
             rock.scale.set(scale, scale * (0.8 + Math.random() * 0.4), scale);
             rocksGroup.add(rock);
@@ -587,9 +587,9 @@ function buildTracksideRocks(rockTemplates) {
         if (Math.random() > 0.38) {
             const template = rockTemplates[Math.floor(Math.random() * rockTemplates.length)];
             const rock = template.clone();
-            const scale = 2.4 + Math.random() * 1.8;
+            const scale = 2.6 + Math.random() * 2.0;
             const x = 63.5 + Math.random() * 22;
-            rock.position.set(x, 0, z + (Math.random() - 0.5) * 12);
+            rock.position.set(x, 0, z + (Math.random() - 0.5) * 14);
             rock.rotation.set((Math.random() - 0.5) * 0.3, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.3);
             rock.scale.set(scale, scale * (0.8 + Math.random() * 0.4), scale);
             rocksGroup.add(rock);
@@ -597,35 +597,15 @@ function buildTracksideRocks(rockTemplates) {
     }
 }
 
-// 6. Track Sidings (Preserving all sponsor images)
-function createTrackSiding(imagePath, x, z, side) {
-    const group = new THREE.Group();
-    const length = 55, height = 10, depth = 2;
-    const baseGeo = new THREE.BoxGeometry(depth, height, length);
-    const baseMat = new THREE.MeshStandardMaterial({
-        map: stoneTex,
-        roughness: 0.88,
-        color: 0x605673
-    });
-
-    const base = new THREE.Mesh(baseGeo, baseMat);
-    base.position.y = height / 2 - 1;
-    base.castShadow = true;
-    group.add(base);
-
-    const tex = textureLoader.load(imagePath);
-    const faceGeo = new THREE.PlaneGeometry(length - 2, height - 2);
-    const faceMat = new THREE.MeshBasicMaterial({ map: tex });
-    const face = new THREE.Mesh(faceGeo, faceMat);
-
-    const xOffset = (side === -1) ? (depth / 2 + 0.1) : -(depth / 2 + 0.1);
-    const yRot = (side === -1) ? Math.PI / 2 : -Math.PI / 2;
-    face.position.set(xOffset, height / 2 - 1, 0);
-    face.rotation.y = yRot;
-    group.add(face);
-    group.position.set(x, 1.2, z);
-    return group;
-}
+// 6. Track Sidings (Optimized with shared geometries, cached materials and textures)
+const sidingLength = 55, sidingHeight = 10, sidingDepth = 2;
+const sharedSidingBaseGeo = new THREE.BoxGeometry(sidingDepth, sidingHeight, sidingLength);
+const sharedSidingBaseMat = new THREE.MeshStandardMaterial({
+    map: stoneTex,
+    roughness: 0.88,
+    color: 0x605673
+});
+const sharedSidingFaceGeo = new THREE.PlaneGeometry(sidingLength - 2, sidingHeight - 2);
 
 const adImages = [
     "images/sidings/1.jpg", "images/sidings/2.jpg", "images/sidings/3.jpg",
@@ -633,8 +613,33 @@ const adImages = [
     "images/sidings/7.jpg", "images/sidings/8.jpg", "images/sidings/9.jpg",
     "images/sidings/10.jpg"
 ];
-const sidingInterval = 60;
 
+const sidingMaterialsMap = {};
+adImages.forEach(img => {
+    const tex = textureLoader.load(img);
+    tex.encoding = THREE.sRGBEncoding;
+    sidingMaterialsMap[img] = new THREE.MeshBasicMaterial({ map: tex });
+});
+
+function createTrackSiding(imagePath, x, z, side) {
+    const group = new THREE.Group();
+    const base = new THREE.Mesh(sharedSidingBaseGeo, sharedSidingBaseMat);
+    base.position.y = sidingHeight / 2 - 1;
+    group.add(base);
+
+    const faceMat = sidingMaterialsMap[imagePath] || sharedSidingBaseMat;
+    const face = new THREE.Mesh(sharedSidingFaceGeo, faceMat);
+
+    const xOffset = (side === -1) ? (sidingDepth / 2 + 0.1) : -(sidingDepth / 2 + 0.1);
+    const yRot = (side === -1) ? Math.PI / 2 : -Math.PI / 2;
+    face.position.set(xOffset, sidingHeight / 2 - 1, 0);
+    face.rotation.y = yRot;
+    group.add(face);
+    group.position.set(x, 1.2, z);
+    return group;
+}
+
+const sidingInterval = 120;
 for (let z = 0; z <= CONFIG.raceDistance; z += sidingInterval) {
     const img1 = adImages[Math.floor(Math.random() * adImages.length)];
     landscapeGroup.add(createTrackSiding(img1, -95, z, -1));
@@ -642,23 +647,25 @@ for (let z = 0; z <= CONFIG.raceDistance; z += sidingInterval) {
     landscapeGroup.add(createTrackSiding(img2, 95, z, 1));
 }
 
-// 7. Roadside Jack-o'-Lanterns (Scattered on sides every now and then)
+// 7. Roadside Jack-o'-Lanterns (Scattered on sides every now and then, deduplicated materials)
 function buildRoadsideProps(jackTemplate) {
     propsGroup.clear();
     jackLanternMaterials.length = 0;
     if (!jackTemplate) return;
 
-    for (let z = 20; z < CONFIG.raceDistance - 20; z += 54) {
+    for (let z = 30; z < CONFIG.raceDistance - 30; z += 120) {
         if (Math.random() > 0.30) {
             const clone = jackTemplate.clone(true);
             const scale = 2.8 * (0.88 + Math.random() * 0.28);
             const x = -61.2 - Math.random() * 3.5;
-            clone.position.set(x, 0, z + (Math.random() - 0.5) * 8);
+            clone.position.set(x, 0, z + (Math.random() - 0.5) * 10);
             clone.rotation.y = (Math.PI / 2) + (Math.random() - 0.5) * 0.7;
             clone.scale.setScalar(scale);
             clone.traverse(c => {
                 if (c.isMesh && c.material?.emissive && (c.material.emissive.r > 0 || c.material.emissive.g > 0)) {
-                    jackLanternMaterials.push(c.material);
+                    if (!jackLanternMaterials.includes(c.material)) {
+                        jackLanternMaterials.push(c.material);
+                    }
                 }
             });
             propsGroup.add(clone);
@@ -667,12 +674,14 @@ function buildRoadsideProps(jackTemplate) {
             const clone = jackTemplate.clone(true);
             const scale = 2.8 * (0.88 + Math.random() * 0.28);
             const x = 61.2 + Math.random() * 3.5;
-            clone.position.set(x, 0, z + (Math.random() - 0.5) * 8);
+            clone.position.set(x, 0, z + (Math.random() - 0.5) * 10);
             clone.rotation.y = (-Math.PI / 2) + (Math.random() - 0.5) * 0.7;
             clone.scale.setScalar(scale);
             clone.traverse(c => {
                 if (c.isMesh && c.material?.emissive && (c.material.emissive.r > 0 || c.material.emissive.g > 0)) {
-                    jackLanternMaterials.push(c.material);
+                    if (!jackLanternMaterials.includes(c.material)) {
+                        jackLanternMaterials.push(c.material);
+                    }
                 }
             });
             propsGroup.add(clone);
@@ -739,15 +748,16 @@ mistCanvas.width = 64;
 mistCanvas.height = 64;
 const mistCtx = mistCanvas.getContext('2d');
 const mistGrad = mistCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
-mistGrad.addColorStop(0, 'rgba(185, 165, 225, 0.52)');
-mistGrad.addColorStop(0.5, 'rgba(110, 245, 85, 0.22)');
-mistGrad.addColorStop(1, 'rgba(60, 20, 90, 0)');
+mistGrad.addColorStop(0, 'rgba(205, 190, 230, 0.85)');
+mistGrad.addColorStop(0.4, 'rgba(165, 145, 195, 0.52)');
+mistGrad.addColorStop(0.75, 'rgba(125, 105, 155, 0.20)');
+mistGrad.addColorStop(1, 'rgba(75, 55, 100, 0)');
 mistCtx.fillStyle = mistGrad;
 mistCtx.fillRect(0, 0, 64, 64);
 const mistTex = new THREE.CanvasTexture(mistCanvas);
 
-const MIST_POOL_SIZE = 100;
-const mistGeo = new THREE.PlaneGeometry(3.2, 3.2);
+const MIST_POOL_SIZE = 240;
+const mistGeo = new THREE.PlaneGeometry(3.6, 3.6);
 const mistPool = [];
 let mistPoolIndex = 0;
 
@@ -757,24 +767,25 @@ for (let i = 0; i < MIST_POOL_SIZE; i++) {
         transparent: true,
         opacity: 0,
         depthWrite: false,
-        blending: THREE.AdditiveBlending
+        blending: THREE.NormalBlending
     });
     const mesh = new THREE.Mesh(mistGeo, mat);
     mesh.rotation.x = -Math.PI / 2;
     mesh.visible = false;
     mistGroup.add(mesh);
-    mistPool.push({ mesh, active: false, age: 0, baseScale: 1 });
+    mistPool.push({ mesh, active: false, age: 0, maxAge: 0.65, baseScale: 1 });
 }
 
-function spawnFootstepMist(x, z, scale) {
+function spawnFootstepMist(x, z, scale, maxAge = 0.65) {
     const item = mistPool[mistPoolIndex];
     mistPoolIndex = (mistPoolIndex + 1) % MIST_POOL_SIZE;
     item.active = true;
     item.age = 0;
+    item.maxAge = maxAge;
     item.baseScale = scale;
-    item.mesh.position.set(x, 0.12, z);
+    item.mesh.position.set(x, 0.14, z);
     item.mesh.scale.set(scale, scale, 1);
-    item.mesh.material.opacity = 0.58;
+    item.mesh.material.opacity = 0.68;
     item.mesh.visible = true;
 }
 
@@ -783,13 +794,14 @@ function updateFootstepMist(delta) {
         const item = mistPool[i];
         if (!item.active) continue;
         item.age += delta;
-        if (item.age >= 0.85) {
+        if (item.age >= item.maxAge) {
             item.active = false;
             item.mesh.visible = false;
         } else {
-            const s = item.baseScale + item.age * 2.8;
+            const progress = item.age / item.maxAge;
+            const s = item.baseScale + progress * 5.2;
             item.mesh.scale.set(s, s, 1);
-            item.mesh.material.opacity = 0.58 * (1 - item.age / 0.85);
+            item.mesh.material.opacity = 0.68 * (1 - progress);
         }
     }
 }
@@ -1086,12 +1098,18 @@ const MonsterModelManager = {
             );
         });
 
+        // 6. Preload Creepster font so countdown numbers render immediately in Creepster font
+        const fontPromise = (typeof document !== 'undefined' && document.fonts && document.fonts.load)
+            ? document.fonts.load("200px 'Creepster'").catch(e => console.warn("Creepster preload warning:", e))
+            : Promise.resolve();
+
         return Promise.all([
             ...racerPromises,
             treePromise,
             gravePromise,
             rockPromise,
-            jackPromise
+            jackPromise,
+            fontPromise
         ]).then(() => {
             this.ready = true;
             if (loadingMsg) loadingMsg.remove();
@@ -1142,7 +1160,7 @@ function activateStartButton() {
         btn.disabled = false;
         btn.style.cursor = 'pointer';
     }
-    initDucks();
+    initRacers();
 }
 
 /**
@@ -1164,6 +1182,13 @@ class Zoombie {
         this.energyCycle = Math.random() * 10;
         this.stepTimer = 0;
         this.usingGLB = false;
+
+        // Cached UI presentation properties
+        this.hexColor = '#' + this.color.toString(16).padStart(6, '0');
+        const r = (this.color >> 16) & 255, g = (this.color >> 8) & 255, b = this.color & 255;
+        this.txtColor = (((r * 299) + (g * 587) + (b * 114)) / 1000) >= 128 ? '#000' : '#fff';
+        this.lightenedColor = lightenColor(this.color, 0.4);
+        this.idPlus1 = String(this.id + 1);
 
         // Arcade kart dynamics state
         this.currentTilt = 0;
@@ -1366,10 +1391,10 @@ class Zoombie {
         let targetSpeed = this.baseSpeed;
         if (energy > 0.4) targetSpeed *= 1.15 + (this.aggressiveness * 0.2);
         else if (energy < -0.4) targetSpeed *= 0.88;
-        targetSpeed += (Math.random() - 0.5) * 1.8;
+        targetSpeed += (Math.random() - 0.5) * (this.baseSpeed * 0.08);
 
         const distRemaining = CONFIG.raceDistance - this.position.z;
-        if (distRemaining < 120 && distRemaining > 0) targetSpeed *= 1.12;
+        if (distRemaining < 320 && distRemaining > 0) targetSpeed *= 1.12;
 
         this.currentSpeed = targetSpeed;
         this.position.z += targetSpeed * delta;
@@ -1377,7 +1402,8 @@ class Zoombie {
         // Natural, organic lane holding along the raceway
         const targetLaneX = this.startX + Math.sin(time * 0.75 + this.id * 1.6) * 1.6;
         const dx = targetLaneX - this.position.x;
-        const lateralSpeed = THREE.MathUtils.clamp(dx * 1.5, -2.5, 2.5);
+        const maxLateral = this.baseSpeed * 0.15;
+        const lateralSpeed = THREE.MathUtils.clamp(dx * 2.2, -maxLateral, maxLateral);
         this.position.x += lateralSpeed * delta;
 
         // Apply dramatic collision swerve impulse if active
@@ -1421,13 +1447,17 @@ class Zoombie {
         const pitch = Math.sin(time * (bounceRate * 0.5) + this.id) * 0.022;
         this.kartTiltGroup.rotation.x = pitch;
 
-        // Dust mist particles behind karts
-        this.stepTimer += delta;
-        if (this.stepTimer > 0.14) {
-            const mistX = 3.6;
-            const mistZ = -2.6;
-            spawnFootstepMist(this.position.x - mistX, this.position.z + mistZ, 1.4 + Math.random() * 0.7);
-            spawnFootstepMist(this.position.x + mistX, this.position.z + mistZ, 1.4 + Math.random() * 0.7);
+        // Dense tire smoke and clay dust plume billowing behind the rear wheels
+        this.stepTimer += delta * this.currentSpeed;
+        if (this.stepTimer >= 1.8) {
+            const mistX = 5.2; // Aligned with the outer rear wheels
+            const mistZ = -12.2; // Spawning directly behind the rear chassis
+            const scale = 2.6 + Math.random() * 0.9;
+            spawnFootstepMist(this.position.x - mistX, this.position.z + mistZ, scale);
+            spawnFootstepMist(this.position.x + mistX, this.position.z + mistZ, scale);
+            if (Math.random() < 0.45) {
+                spawnFootstepMist(this.position.x + (Math.random() - 0.5) * 3.2, this.position.z - 13.0, scale * 1.3);
+            }
             this.stepTimer = 0;
         }
     }
@@ -1441,7 +1471,7 @@ class Zoombie {
         this.swerveVelX = 0;
         this.swerveDuration = 0;
 
-        const isWinner = (ducks[0] === this);
+        const isWinner = (racers[0] === this);
         if (isWinner) {
             this.kartTiltGroup.position.y = this.baseKartY + Math.abs(Math.sin(time * 7)) * 0.35;
             this.kartTiltGroup.rotation.y += 0.05;
@@ -1488,45 +1518,48 @@ class Zoombie {
 /**
  * GAME STATE & DOM CACHING
  */
-let ducks = [];
+let racers = [];
+let ducks = racers; // Backward-compatible alias for console & external scripts
 let lbRowsCache = [];
 
-function initDucks() {
-    ducks.forEach(d => { scene.remove(d.mesh); d.dispose(); });
-    ducks = [];
+function initRacers() {
+    racers.forEach(d => { scene.remove(d.mesh); d.dispose(); });
+    racers = [];
+    ducks = racers;
     resetFootstepMist();
 
     const raceConfig = storedRaces[currentRaceIndex] || (typeof DEFAULT_RACES !== 'undefined' ? DEFAULT_RACES[0] : null);
     if (!raceConfig) return;
 
-    const names = raceConfig.ducks || [];
+    const names = raceConfig.racers || raceConfig.ducks || [];
     const headerTitle = document.getElementById('header-race-name');
     if (headerTitle) headerTitle.innerText = raceConfig.name.toUpperCase();
 
     // Evenly spaced, straight starting line across the road width
     const spacing = 13.0;
-    const leftBound = -((CONFIG.duckCount - 1) * spacing) / 2;
+    const leftBound = -((CONFIG.racerCount - 1) * spacing) / 2;
 
-    for (let i = 0; i < CONFIG.duckCount; i++) {
+    for (let i = 0; i < CONFIG.racerCount; i++) {
         const x = leftBound + (i * spacing);
         const name = names[i % names.length] || `Zoombie ${i + 1}`;
-        ducks.push(new Zoombie(i, name, x));
+        racers.push(new Zoombie(i, name, x));
     }
 
     initLeaderboardDOM();
 }
+const initDucks = initRacers; // Backward-compatible alias
 
 function resetRacersToStartGrid() {
-    if (ducks.length !== CONFIG.duckCount) {
-        initDucks();
+    if (racers.length !== CONFIG.racerCount) {
+        initRacers();
         return;
     }
     const spacing = 13.0;
-    const leftBound = -((CONFIG.duckCount - 1) * spacing) / 2;
-    ducks.sort((a, b) => a.id - b.id);
-    for (let i = 0; i < ducks.length; i++) {
-        ducks[i].startX = leftBound + (i * spacing);
-        ducks[i].resetToStartLine();
+    const leftBound = -((CONFIG.racerCount - 1) * spacing) / 2;
+    racers.sort((a, b) => a.id - b.id);
+    for (let i = 0; i < racers.length; i++) {
+        racers[i].startX = leftBound + (i * spacing);
+        racers[i].resetToStartLine();
     }
     resetFootstepMist();
 }
@@ -1537,7 +1570,7 @@ function initLeaderboardDOM() {
     lbContent.innerHTML = '';
     lbRowsCache = [];
 
-    for (let i = 0; i < CONFIG.duckCount; i++) {
+    for (let i = 0; i < CONFIG.racerCount; i++) {
         const row = document.createElement('div');
         row.className = i === 0 ? 'lb-row leader' : 'lb-row';
 
@@ -1559,7 +1592,7 @@ function initLeaderboardDOM() {
         row.appendChild(info);
         lbContent.appendChild(row);
 
-        lbRowsCache.push({ row, rank, nameSpan, distSpan });
+        lbRowsCache.push({ row, rank, nameSpan, distSpan, _racerId: -1, _distText: '', _finished: false });
     }
 }
 
@@ -1619,52 +1652,62 @@ class Particle {
         this.y = y;
         this.color = color;
         const angle = Math.random() * Math.PI * 2;
-        const speed = Math.random() * 6;
+        const speed = 1.5 + Math.random() * 5.5;
         this.vx = Math.cos(angle) * speed;
         this.vy = Math.sin(angle) * speed;
         this.alpha = 1;
-        this.decay = 0.012 + Math.random() * 0.02;
+        this.decay = 0.014 + Math.random() * 0.018;
+        this.size = 2.2 + Math.random() * 1.4;
     }
     update() {
         this.x += this.vx;
         this.y += this.vy;
-        this.vy += 0.1;
+        this.vy += 0.09;
+        this.vx *= 0.985;
         this.alpha -= this.decay;
-    }
-    draw() {
-        fxCtx.save();
-        fxCtx.globalAlpha = this.alpha;
-        fxCtx.beginPath();
-        fxCtx.arc(this.x, this.y, 2.2, 0, Math.PI * 2);
-        fxCtx.fillStyle = this.color;
-        fxCtx.fill();
-        fxCtx.restore();
     }
 }
 
 function explode(x, y, color) {
-    for (let i = 0; i < 65; i++) particles.push(new Particle(x, y, color));
-    for (let i = 0; i < 20; i++) particles.push(new Particle(x, y, '#76ff03'));
+    // Fireworks exclusively in the winner's color (no green)
+    for (let i = 0; i < 55; i++) {
+        particles.push(new Particle(x, y, color));
+    }
 }
 
 function updateFireworks() {
     if (!fxCtx) return;
+    // Zero CPU overhead during the race: immediate return when fireworks are idle
+    if (!doFireworks && fireworks.length === 0 && particles.length === 0) return;
+
     fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
 
-    if (doFireworks && Math.random() < 0.25) {
-        fireworks.push(new Firework(100 + Math.random() * (fxCanvas.height / 2), winnerColor));
+    if (doFireworks && Math.random() < 0.22) {
+        fireworks.push(new Firework(80 + Math.random() * (fxCanvas.height * 0.45), winnerColor));
     }
 
     for (let i = fireworks.length - 1; i >= 0; i--) {
-        fireworks[i].update();
-        fireworks[i].draw();
-        if (fireworks[i].dead) fireworks.splice(i, 1);
+        const fw = fireworks[i];
+        fw.update();
+        fw.draw();
+        if (fw.dead) fireworks.splice(i, 1);
     }
 
-    for (let i = particles.length - 1; i >= 0; i--) {
-        particles[i].update();
-        particles[i].draw();
-        if (particles[i].alpha <= 0) particles.splice(i, 1);
+    if (particles.length > 0) {
+        fxCtx.fillStyle = winnerColor;
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.update();
+            if (p.alpha <= 0) {
+                particles.splice(i, 1);
+            } else {
+                fxCtx.globalAlpha = Math.max(0, p.alpha);
+                fxCtx.beginPath();
+                fxCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                fxCtx.fill();
+            }
+        }
+        fxCtx.globalAlpha = 1.0;
     }
 }
 
@@ -1677,7 +1720,10 @@ function stopFireworks() {
     doFireworks = false;
     fireworks = [];
     particles = [];
-    if (fxCtx) fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+    if (fxCtx) {
+        fxCtx.globalAlpha = 1.0;
+        fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+    }
 }
 
 /**
@@ -1698,7 +1744,8 @@ const winnerText = document.getElementById('winner-text');
 const progressFill = document.getElementById('progress-fill');
 const speedEl = document.getElementById('speed-stat');
 const raceSelect = document.getElementById('race-select');
-const duckPreview = document.getElementById('duck-preview');
+const racerPreview = document.getElementById('racer-preview') || document.getElementById('duck-preview');
+const duckPreview = racerPreview; // Backward-compatible alias
 
 const aboutBtn = document.getElementById('about-btn');
 const aboutModal = document.getElementById('about-modal');
@@ -1721,11 +1768,11 @@ function populateRaceSelector() {
     });
 }
 
-function updateDuckPreview() {
+function updateRacerPreview() {
     const raceConfig = storedRaces[currentRaceIndex] || (typeof DEFAULT_RACES !== 'undefined' ? DEFAULT_RACES[0] : null);
     if (!raceConfig) return;
 
-    const names = raceConfig.ducks || [];
+    const names = raceConfig.racers || raceConfig.ducks || [];
     const types = (typeof MONSTER_TYPES !== 'undefined') ? MONSTER_TYPES : [];
     let html = '';
     for (let i = 0; i < 8; i++) {
@@ -1742,8 +1789,9 @@ function updateDuckPreview() {
                 <div class="preview-type">${mType}</div>
             </div>`;
     }
-    duckPreview.innerHTML = html;
+    if (racerPreview) racerPreview.innerHTML = html;
 }
+const updateDuckPreview = updateRacerPreview; // Backward-compatible alias
 
 raceSelect.addEventListener('change', (e) => {
     currentRaceIndex = parseInt(e.target.value, 10);
@@ -1751,8 +1799,8 @@ raceSelect.addEventListener('change', (e) => {
     firstFinishTriggered = false;
     progressFill.style.width = "0%";
     if (speedEl) speedEl.innerText = "0";
-    updateDuckPreview();
-    initDucks();
+    updateRacerPreview();
+    initRacers();
 });
 
 if (aboutBtn && aboutModal && closeAboutBtn) {
@@ -1775,14 +1823,14 @@ saveConfigBtn.addEventListener('click', () => {
         const val = document.getElementById(`p-name-${i}`).value.trim();
         dNames.push(val || `Zoombie ${i + 1}`);
     }
-    const newRace = { id: "custom_" + Date.now(), name: rName, ducks: dNames };
+    const newRace = { id: "custom_" + Date.now(), name: rName, racers: dNames, ducks: dNames };
     storedRaces.push(newRace);
     saveRaceData();
     currentRaceIndex = storedRaces.length - 1;
     setRaceState(RACE_STATE.READY);
     populateRaceSelector();
-    updateDuckPreview();
-    initDucks();
+    updateRacerPreview();
+    initRacers();
     configModal.classList.add('hidden');
 });
 
@@ -1791,7 +1839,17 @@ resetDataBtn.addEventListener('click', () => {
     configModal.classList.add('hidden');
 });
 
-document.getElementById('start-btn').addEventListener('click', () => {
+document.getElementById('start-btn').addEventListener('click', async () => {
+    // Guarantee Creepster font is 100% loaded and ready in browser before countdown starts
+    if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
+        try {
+            await document.fonts.load("200px 'Creepster'");
+            if (document.fonts.ready) await document.fonts.ready;
+        } catch (e) {
+            console.warn("Creepster font loading check:", e);
+        }
+    }
+
     startScreen.classList.add('hidden');
 
     // Reset all racers cleanly onto the starting line in READY/COUNTDOWN stance
@@ -1899,14 +1957,14 @@ document.getElementById('restart-btn').addEventListener('click', () => {
 
     currentRaceIndex = (currentRaceIndex + 1) % storedRaces.length;
     populateRaceSelector();
-    updateDuckPreview();
+    updateRacerPreview();
 
     setRaceState(RACE_STATE.READY);
     firstFinishTriggered = false;
 
     progressFill.style.width = "0%";
     if (speedEl) speedEl.innerText = "0";
-    initDucks();
+    initRacers();
     camera.position.set(0, 18, 54);
     cameraLookAt.set(0, 6.0, 0);
     camera.lookAt(cameraLookAt);
@@ -1925,29 +1983,46 @@ let cinematicTarget = new THREE.Vector3();
 let cinematicLook = new THREE.Vector3();
 
 const LB_SCREEN_FRACTION = 0.33;
-const DUCK_PADDING = 5.5;
+const RACER_PADDING = 5.5;
+const DUCK_PADDING = RACER_PADDING; // Backward-compatible alias
 const MIN_CAM_DIST_Z = 36;
 const MAX_CAM_DIST_Z = 75;
 
-function getDuckBounds() {
+const cachedBounds = {
+    centerX: 0,
+    centerZ: 0,
+    spreadX: 0,
+    spreadZ: 0,
+    minX: 0,
+    maxX: 0,
+    minZ: 0,
+    maxZ: 0
+};
+
+function getRacerBounds() {
     let minX = Infinity, maxX = -Infinity;
     let minZ = Infinity, maxZ = -Infinity;
 
-    for (const d of ducks) {
-        if (d.position.x < minX) minX = d.position.x;
-        if (d.position.x > maxX) maxX = d.position.x;
-        if (d.position.z < minZ) minZ = d.position.z;
-        if (d.position.z > maxZ) maxZ = d.position.z;
+    for (let i = 0; i < racers.length; i++) {
+        const p = racers[i].position;
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.z < minZ) minZ = p.z;
+        if (p.z > maxZ) maxZ = p.z;
     }
 
-    return {
-        centerX: (minX + maxX) / 2,
-        centerZ: (minZ + maxZ) / 2,
-        spreadX: (maxX - minX) + DUCK_PADDING * 2,
-        spreadZ: (maxZ - minZ) + DUCK_PADDING * 2,
-        minX, maxX, minZ, maxZ
-    };
+    cachedBounds.centerX = (minX + maxX) * 0.5;
+    cachedBounds.centerZ = (minZ + maxZ) * 0.5;
+    cachedBounds.spreadX = (maxX - minX) + RACER_PADDING * 2;
+    cachedBounds.spreadZ = (maxZ - minZ) + RACER_PADDING * 2;
+    cachedBounds.minX = minX;
+    cachedBounds.maxX = maxX;
+    cachedBounds.minZ = minZ;
+    cachedBounds.maxZ = maxZ;
+
+    return cachedBounds;
 }
+const getDuckBounds = getRacerBounds; // Backward-compatible alias
 
 function calcDistanceForWidth(worldWidth, screenFraction) {
     const fovRad = THREE.MathUtils.degToRad(camera.fov);
@@ -1962,13 +2037,13 @@ function applyViewOffset() {
     camera.setViewOffset(fullW, fullH, shiftPixels, 0, fullW, fullH);
 }
 
-function updateCamera(time, delta, leadDuck) {
+const winnerCamOffset = new THREE.Vector3(0, 6.0, 0);
+
+function updateCamera(time, delta, leadRacer) {
     if (time > camTimer + 10) { camTimer = time; camAngle = (camAngle + 1) % 3; }
     const target = cinematicTarget, look = cinematicLook;
 
-    applyViewOffset();
-
-    const bounds = getDuckBounds();
+    const bounds = getRacerBounds();
     const availableFraction = 1.0 - LB_SCREEN_FRACTION;
 
     // Move directional moonlight & non-shadow fill/rim lights along with the pack
@@ -1985,7 +2060,7 @@ function updateCamera(time, delta, leadDuck) {
     packRimLight.target.updateMatrixWorld();
 
     if (firstFinishTriggered) {
-        const winner = ducks[0];
+        const winner = racers[0];
         const t = time - winnerFinishTime;
 
         const dist = 24 + (t * 2.5);
@@ -1997,7 +2072,7 @@ function updateCamera(time, delta, leadDuck) {
             height,
             winner.position.z + Math.cos(angle) * dist
         );
-        look.copy(winner.position).add(new THREE.Vector3(0, 6.0, 0));
+        look.copy(winner.position).add(winnerCamOffset);
 
     } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
         // Front-facing starting grid showcase camera
@@ -2006,31 +2081,36 @@ function updateCamera(time, delta, leadDuck) {
         look.set(bounds.centerX, 6.0, bounds.centerZ);
 
     } else {
-        const distRemaining = CONFIG.raceDistance - leadDuck.position.z;
+        const distRemaining = CONFIG.raceDistance - leadRacer.position.z;
         const fitDist = calcDistanceForWidth(bounds.spreadX, availableFraction);
 
-        if (distRemaining <= 120) {
-            target.set(bounds.centerX, 16.0, leadDuck.position.z - fitDist * 0.65);
-            look.set(bounds.centerX, 6.0, leadDuck.position.z + 24);
+        const finishApproachDist = CONFIG.raceDistance * 0.05; // 5% from finish line (210m for 4200m track)
+
+        if (distRemaining <= finishApproachDist) {
+            // High aerial bird's-eye view framing all 8 karts and the finish line
+            const birdsEyeHeight = Math.max(68.0, bounds.spreadX * 0.72, bounds.spreadZ * 0.82);
+            const birdsEyeDistZ = Math.max(50.0, bounds.spreadZ * 0.65);
+            target.set(bounds.centerX, birdsEyeHeight, bounds.centerZ - birdsEyeDistZ);
+            look.set(bounds.centerX, 2.5, Math.min(CONFIG.raceDistance + 10, bounds.centerZ + 25));
         } else {
             if (camAngle === 0) {
                 const camHeight = Math.max(13.0, fitDist * 0.30);
-                target.set(bounds.centerX, camHeight, leadDuck.position.z + fitDist * 0.90);
-                look.set(bounds.centerX, 6.0, leadDuck.position.z);
+                target.set(bounds.centerX, camHeight, leadRacer.position.z + fitDist * 0.90);
+                look.set(bounds.centerX, 6.0, leadRacer.position.z);
             } else if (camAngle === 1) {
                 const camHeight = Math.max(18.0, fitDist * 0.44);
                 target.set(bounds.centerX, camHeight, bounds.centerZ + fitDist * 1.0);
                 look.set(bounds.centerX, 5.8, bounds.centerZ);
             } else {
                 const camHeight = Math.max(13.0, fitDist * 0.30);
-                target.set(bounds.minX - fitDist * 0.36, camHeight, leadDuck.position.z + fitDist * 0.60);
-                look.set(bounds.centerX + 5, 6.0, leadDuck.position.z);
+                target.set(bounds.minX - fitDist * 0.36, camHeight, leadRacer.position.z + fitDist * 0.60);
+                look.set(bounds.centerX + 5, 6.0, leadRacer.position.z);
             }
         }
     }
 
-    camera.position.lerp(target, 3.8 * delta);
-    cameraLookAt.lerp(look, 3.8 * delta);
+    camera.position.lerp(target, Math.min(1.0, 5.0 * delta));
+    cameraLookAt.lerp(look, Math.min(1.0, 5.0 * delta));
     camera.lookAt(cameraLookAt);
 }
 
@@ -2046,39 +2126,58 @@ function lightenColor(hex, amount) {
     return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
-function updateUI(leadDuck, sortedDucks, time) {
-    if (raceState === RACE_STATE.RACING && speedEl) {
-        speedEl.innerText = Math.round(leadDuck.currentSpeed * 3.6);
-    } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
-        if (speedEl) speedEl.innerText = "0";
-    }
+let lastSpeedDisplay = -1;
+let lastProgressPct = -1;
 
-    for (let i = 0; i < sortedDucks.length; i++) {
-        const d = sortedDucks[i];
-        const cache = lbRowsCache[i];
-        if (!cache) continue;
-
-        const hexColor = '#' + d.color.toString(16).padStart(6, '0');
-        const r = (d.color >> 16) & 255, g = (d.color >> 8) & 255, b = d.color & 255;
-        const txtCol = (((r * 299) + (g * 587) + (b * 114)) / 1000) >= 128 ? '#000' : '#fff';
-
-        cache.rank.style.background = hexColor;
-        cache.rank.style.color = txtCol;
-        cache.rank.textContent = d.id + 1;
-
-        cache.nameSpan.style.color = lightenColor(d.color, 0.4);
-        cache.nameSpan.textContent = d.name;
-
-        if (d.finished) {
-            cache.distSpan.innerHTML = `<span style="color:#c042ff">FINISHED</span>`;
-        } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
-            cache.distSpan.textContent = 'READY';
-        } else {
-            cache.distSpan.textContent = (i === 0) ? 'LEADER' : `+${Math.floor(leadDuck.position.z - d.position.z)}m`;
+function updateUI(leadRacer, sortedRacers, time) {
+    if (speedEl) {
+        const curSpeed = (raceState === RACE_STATE.RACING) ? Math.round(leadRacer.currentSpeed * 3.6) : 0;
+        if (lastSpeedDisplay !== curSpeed) {
+            speedEl.textContent = curSpeed;
+            lastSpeedDisplay = curSpeed;
         }
     }
 
-    progressFill.style.width = Math.min((leadDuck.position.z / CONFIG.raceDistance) * 100, 100) + '%';
+    for (let i = 0; i < sortedRacers.length; i++) {
+        const d = sortedRacers[i];
+        const cache = lbRowsCache[i];
+        if (!cache) continue;
+
+        if (cache._racerId !== d.id) {
+            cache.rank.style.background = d.hexColor;
+            cache.rank.style.color = d.txtColor;
+            cache.rank.textContent = d.idPlus1;
+            cache.nameSpan.style.color = d.lightenedColor;
+            cache.nameSpan.textContent = d.name;
+            cache._racerId = d.id;
+        }
+
+        const isFinished = d.finished;
+        let distText = '';
+        if (isFinished) {
+            distText = 'FINISHED';
+        } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
+            distText = 'READY';
+        } else {
+            distText = (i === 0) ? 'LEADER' : `+${Math.floor(leadRacer.position.z - d.position.z)}m`;
+        }
+
+        if (cache._distText !== distText || cache._finished !== isFinished) {
+            if (isFinished) {
+                cache.distSpan.innerHTML = `<span style="color:#c042ff">FINISHED</span>`;
+            } else {
+                cache.distSpan.textContent = distText;
+            }
+            cache._distText = distText;
+            cache._finished = isFinished;
+        }
+    }
+
+    const pct = Math.min((leadRacer.position.z / CONFIG.raceDistance) * 100, 100);
+    if (Math.abs(lastProgressPct - pct) > 0.05) {
+        progressFill.style.width = pct.toFixed(1) + '%';
+        lastProgressPct = pct;
+    }
 }
 
 function animate() {
@@ -2087,7 +2186,7 @@ function animate() {
     const delta = deltaReal * gameSpeed;
     const time = clock.getElapsedTime();
 
-    // Flickering candle effect for roadside Jack-o'-Lantern faces
+    // Flickering candle effect for roadside Jack-o'-Lantern faces (optimized single material update)
     if (jackLanternMaterials.length > 0) {
         const flicker = 1.6 + Math.sin(time * 14) * 0.4 + Math.cos(time * 23) * 0.3;
         for (let i = 0; i < jackLanternMaterials.length; i++) {
@@ -2099,7 +2198,8 @@ function animate() {
     updateFireworks();
 
     // Update all racers according to the active raceState
-    ducks.forEach(d => {
+    for (let i = 0; i < racers.length; i++) {
+        const d = racers[i];
         d.update(delta, time);
         if (raceState === RACE_STATE.RACING && !d.finished && d.position.z >= CONFIG.raceDistance) {
             d.finished = true;
@@ -2107,7 +2207,7 @@ function animate() {
             // As each kart reaches the finish line, decrease volume of race.mp3 by 17%
             decreaseRaceAudioVolume(0.17);
         }
-    });
+    }
 
     // Dynamic race audio volume management (fade-in over 3s, then smooth stepping on kart finishes)
     if (isFadingInRaceAudio) {
@@ -2131,9 +2231,9 @@ function animate() {
         // Kart collision avoidance and overtaking room with dramatic collision swerves
         const minSep = 12.0;
         const minSepSq = minSep * minSep;
-        for (let i = 0; i < ducks.length; i++) {
-            for (let j = i + 1; j < ducks.length; j++) {
-                const d1 = ducks[i], d2 = ducks[j];
+        for (let i = 0; i < racers.length; i++) {
+            for (let j = i + 1; j < racers.length; j++) {
+                const d1 = racers[i], d2 = racers[j];
                 const dx = d1.position.x - d2.position.x;
                 const dz = d1.position.z - d2.position.z;
                 const distSq = dx * dx + dz * dz;
@@ -2156,39 +2256,52 @@ function animate() {
             }
         }
 
-        ducks.sort((a, b) => (a.finished && b.finished)
+        racers.sort((a, b) => (a.finished && b.finished)
             ? a.finishTime - b.finishTime
             : (a.finished ? -1 : (b.finished ? 1 : b.position.z - a.position.z))
         );
 
-        const leadDuck = ducks[0];
+        let anyFinished = false;
+        let allFinished = true;
+        let trueWinner = racers[0];
 
-        if (!firstFinishTriggered && ducks.some(d => d.finished)) {
+        for (let i = 0; i < racers.length; i++) {
+            const d = racers[i];
+            if (d.finished) {
+                anyFinished = true;
+                if (d.finishTime < trueWinner.finishTime) {
+                    trueWinner = d;
+                }
+            } else {
+                allFinished = false;
+            }
+        }
+
+        if (!firstFinishTriggered && anyFinished) {
             firstFinishTriggered = true;
             winnerFinishTime = time;
 
             sfxWinner.currentTime = 0;
             sfxWinner.play().catch(e => console.warn(e));
 
-            startFireworks(leadDuck.color);
+            startFireworks(racers[0].color);
         }
 
-        if (ducks.every(d => d.finished) && raceState !== RACE_STATE.FINISHED) {
+        if (allFinished && raceState !== RACE_STATE.FINISHED) {
             setRaceState(RACE_STATE.FINISHED);
-            const trueWinner = ducks.reduce((prev, curr) => (prev.finishTime < curr.finishTime) ? prev : curr);
 
             winnerText.innerText = `WINNER: #${trueWinner.id + 1} ${trueWinner.name.toUpperCase()}!`;
-            winnerText.style.color = lightenColor(trueWinner.color, 0.4);
+            winnerText.style.color = trueWinner.lightenedColor || lightenColor(trueWinner.color, 0.4);
             setTimeout(() => { endScreen.classList.remove('hidden'); }, 2000);
 
             fadeOutAudio(sfxRace, 3000);
         }
     }
 
-    const leadDuck = ducks[0];
-    if (leadDuck) {
-        updateCamera(time, deltaReal, leadDuck);
-        updateUI(leadDuck, ducks, time);
+    const leadRacer = racers[0];
+    if (leadRacer) {
+        updateCamera(time, deltaReal, leadRacer);
+        updateUI(leadRacer, racers, time);
     }
 
     renderer.render(scene, camera);
@@ -2203,4 +2316,5 @@ window.addEventListener('resize', () => {
     resizeCanvas();
 });
 
+applyViewOffset();
 animate();

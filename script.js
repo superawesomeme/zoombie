@@ -715,19 +715,21 @@ function generateTrackHazards() {
     const maxZ = 0.90 * CONFIG.raceDistance; // 3780m (not within last 10%)
     const minSeparation = 0.05 * CONFIG.raceDistance; // 210m (not within 5% of each other)
 
-    // Count between 1 and 4 for each hazard
-    const slimeCount = 1 + Math.floor(Math.random() * 4);
-    const leafCount = 1 + Math.floor(Math.random() * 4);
+    // Count increased by 50% (from 1-4 to 2-6 occurrences per race)
+    const slimeCount = 2 + Math.floor(Math.random() * 5);
+    const leafCount = 2 + Math.floor(Math.random() * 5);
 
     const placedZ = [];
 
     function pickValidZ() {
-        for (let attempts = 0; attempts < 400; attempts++) {
-            const candidateZ = minZ + Math.random() * (maxZ - minZ);
-            const tooClose = placedZ.some(pz => Math.abs(candidateZ - pz) < minSeparation);
-            if (!tooClose) {
-                placedZ.push(candidateZ);
-                return candidateZ;
+        for (let sep = minSeparation; sep >= minSeparation * 0.75; sep *= 0.9) {
+            for (let attempts = 0; attempts < 400; attempts++) {
+                const candidateZ = minZ + Math.random() * (maxZ - minZ);
+                const tooClose = placedZ.some(pz => Math.abs(candidateZ - pz) < sep);
+                if (!tooClose) {
+                    placedZ.push(candidateZ);
+                    return candidateZ;
+                }
             }
         }
         const candidateZ = minZ + Math.random() * (maxZ - minZ);

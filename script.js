@@ -13,6 +13,7 @@ const CONFIG = {
 // Explicit Race State Machine
 const RACE_STATE = {
     READY: 'READY',
+    INTRO: 'INTRO',
     COUNTDOWN: 'COUNTDOWN',
     RACING: 'RACING',
     FINISHED: 'FINISHED'
@@ -51,6 +52,10 @@ let firstFinishTriggered = false;
 let winnerFinishTime = 0;
 let countdownTimerId = null;
 
+// Camera start line fly-by state
+let introFlybyTimer = 0;
+let introFlybyActive = false;
+
 function setRaceState(nextState) {
     raceState = nextState;
     isCountingDown = (nextState === RACE_STATE.COUNTDOWN);
@@ -58,25 +63,25 @@ function setRaceState(nextState) {
     raceEnded = (nextState === RACE_STATE.FINISHED);
 }
 
-// -- AUDIO SETUP --
+// -- AUDIO SETUP (All .ogg arcade sound effects) --
 const sfxRace = new Audio('audio/race.ogg');
 sfxRace.loop = true;
 sfxRace.volume = 0;
 
-const sfxEngine = new Audio('audio/engine.mp3');
+const sfxEngine = new Audio('audio/engine.ogg');
 sfxEngine.loop = false;
-sfxEngine.volume = 0.9;
+sfxEngine.volume = 0.95;
 
-const sfxStart = new Audio('audio/start.mp3');
+const sfxStart = new Audio('audio/start.ogg');
 sfxStart.volume = 1.0;
 
-const sfxWinner = new Audio('audio/winner.mp3');
+const sfxWinner = new Audio('audio/winner.ogg');
 sfxWinner.volume = 1.0;
 
 // Collision thud audio pool for punchy, overlapping collision sounds
 const THUD_POOL_SIZE = 6;
 const thudAudioPool = Array.from({ length: THUD_POOL_SIZE }, () => {
-    const a = new Audio('audio/thud.mp3');
+    const a = new Audio('audio/thud.ogg');
     a.volume = 0.90;
     return a;
 });
@@ -93,7 +98,44 @@ function playThudSound(time) {
     audio.play().catch(e => console.warn("Thud sound failed:", e));
 }
 
-// Dynamic race audio state (3s fade-in from 0 to 100%, 17% drop per finisher)
+// Hazard audio pools (slime.ogg & leaves.ogg)
+const SLIME_POOL_SIZE = 4;
+const slimeAudioPool = Array.from({ length: SLIME_POOL_SIZE }, () => {
+    const a = new Audio('audio/slime.ogg');
+    a.volume = 0.95;
+    return a;
+});
+let slimePoolIndex = 0;
+let lastSlimeSoundTime = 0;
+
+function playSlimeSound(time) {
+    if (time !== undefined && time - lastSlimeSoundTime < 0.10) return;
+    if (time !== undefined) lastSlimeSoundTime = time;
+    const a = slimeAudioPool[slimePoolIndex];
+    slimePoolIndex = (slimePoolIndex + 1) % SLIME_POOL_SIZE;
+    a.currentTime = 0;
+    a.play().catch(e => console.warn("Slime sound failed:", e));
+}
+
+const LEAF_POOL_SIZE = 4;
+const leafAudioPool = Array.from({ length: LEAF_POOL_SIZE }, () => {
+    const a = new Audio('audio/leaves.ogg');
+    a.volume = 0.95;
+    return a;
+});
+let leafPoolIndex = 0;
+let lastLeafSoundTime = 0;
+
+function playLeavesSound(time) {
+    if (time !== undefined && time - lastLeafSoundTime < 0.10) return;
+    if (time !== undefined) lastLeafSoundTime = time;
+    const a = leafAudioPool[leafPoolIndex];
+    leafPoolIndex = (leafPoolIndex + 1) % LEAF_POOL_SIZE;
+    a.currentTime = 0;
+    a.play().catch(e => console.warn("Leaves sound failed:", e));
+}
+
+// Dynamic race audio state (starts at 100% volume, decreased by 17% per finished racer)
 let raceAudioTargetVolume = 1.0;
 let isFadingInRaceAudio = false;
 let raceAudioFadeTimer = 0;
@@ -101,11 +143,10 @@ let raceAudioFadeTimer = 0;
 function startRaceAudio() {
     if (fadeInterval) clearInterval(fadeInterval);
     sfxRace.currentTime = 0;
-    sfxRace.volume = 0;
+    sfxRace.volume = 1.0;
     sfxRace.loop = true;
-    raceAudioFadeTimer = 0;
-    isFadingInRaceAudio = true;
     raceAudioTargetVolume = 1.0;
+    isFadingInRaceAudio = false;
     sfxRace.play().catch(e => console.warn("Race audio play failed:", e));
 }
 
@@ -658,6 +699,209 @@ landscapeGroup.add(rocksGroup);
 const propsGroup = new THREE.Group();
 landscapeGroup.add(propsGroup);
 
+// Track Hazard Groups & Dynamic State (Slime puddles & Autumn Leaf piles)
+const hazardsGroup = new THREE.Group();
+landscapeGroup.add(hazardsGroup);
+
+let activeHazards = [];
+
+function generateTrackHazards() {
+    hazardsGroup.clear();
+    activeHazards = [];
+
+    if (!MonsterModelManager.slimeTemplate && !MonsterModelManager.leafTemplate) return;
+
+    const minZ = 0.10 * CONFIG.raceDistance; // 420m (not within first 10%)
+    const maxZ = 0.90 * CONFIG.raceDistance; // 3780m (not within last 10%)
+    const minSeparation = 0.05 * CONFIG.raceDistance; // 210m (not within 5% of each other)
+
+    // Count between 1 and 4 for each hazard
+    const slimeCount = 1 + Math.floor(Math.random() * 4);
+    const leafCount = 1 + Math.floor(Math.random() * 4);
+
+    const placedZ = [];
+
+    function pickValidZ() {
+        for (let attempts = 0; attempts < 400; attempts++) {
+            const candidateZ = minZ + Math.random() * (maxZ - minZ);
+            const tooClose = placedZ.some(pz => Math.abs(candidateZ - pz) < minSeparation);
+            if (!tooClose) {
+                placedZ.push(candidateZ);
+                return candidateZ;
+            }
+        }
+        const candidateZ = minZ + Math.random() * (maxZ - minZ);
+        placedZ.push(candidateZ);
+        return candidateZ;
+    }
+
+    // 1. Generate Slime Hazards (slime.glb)
+    if (MonsterModelManager.slimeTemplate) {
+        for (let i = 0; i < slimeCount; i++) {
+            const z = pickValidZ();
+            const x = (Math.random() - 0.5) * 78;
+
+            const slimeMesh = MonsterModelManager.slimeTemplate.clone(true);
+            const scale = 5.2 + Math.random() * 1.2;
+            slimeMesh.scale.setScalar(scale);
+            slimeMesh.position.set(x, 0.06, z);
+            slimeMesh.rotation.y = Math.random() * Math.PI * 2;
+            hazardsGroup.add(slimeMesh);
+
+            activeHazards.push({
+                type: 'slime',
+                id: 'slime_' + i + '_' + Math.random().toString(36).substr(2, 4),
+                mesh: slimeMesh,
+                baseScale: scale,
+                x: x,
+                z: z,
+                radius: scale * 0.95,
+                hitRacers: new Set()
+            });
+        }
+    }
+
+    // 2. Generate Leaf Pile Hazards (leaf.glb small piles)
+    if (MonsterModelManager.leafTemplate) {
+        for (let i = 0; i < leafCount; i++) {
+            const z = pickValidZ();
+            const x = (Math.random() - 0.5) * 78;
+
+            const pileGroup = new THREE.Group();
+            pileGroup.position.set(x, 0.05, z);
+
+            const leafCountInPile = 16 + Math.floor(Math.random() * 8);
+            const leaves = [];
+
+            for (let j = 0; j < leafCountInPile; j++) {
+                const leafMesh = MonsterModelManager.leafTemplate.clone(true);
+                const dist = Math.pow(Math.random(), 0.6) * 4.6;
+                const angle = Math.random() * Math.PI * 2;
+                const lx = Math.cos(angle) * dist;
+                const lz = Math.sin(angle) * dist;
+                const ly = Math.max(0, (1 - dist / 5.0) * 1.3) + Math.random() * 0.35;
+
+                leafMesh.position.set(lx, ly, lz);
+                leafMesh.rotation.set(
+                    (Math.random() - 0.5) * 0.9,
+                    Math.random() * Math.PI * 2,
+                    (Math.random() - 0.5) * 0.9
+                );
+                const lScale = 1.35 + Math.random() * 0.5;
+                leafMesh.scale.setScalar(lScale);
+                pileGroup.add(leafMesh);
+
+                leaves.push({
+                    mesh: leafMesh,
+                    vx: 0, vy: 0, vz: 0,
+                    rotVx: 0, rotVy: 0, rotVz: 0
+                });
+            }
+
+            hazardsGroup.add(pileGroup);
+
+            activeHazards.push({
+                type: 'leaf',
+                id: 'leaf_' + i + '_' + Math.random().toString(36).substr(2, 4),
+                mesh: pileGroup,
+                leaves: leaves,
+                x: x,
+                z: z,
+                radius: 5.5,
+                scattered: false,
+                scatterTime: 0
+            });
+        }
+    }
+}
+
+function checkHazardCollisions(time) {
+    if (raceState !== RACE_STATE.RACING) return;
+
+    for (let h = 0; h < activeHazards.length; h++) {
+        const hazard = activeHazards[h];
+
+        if (hazard.type === 'slime') {
+            for (let i = 0; i < racers.length; i++) {
+                const racer = racers[i];
+                if (racer.finished) continue;
+                if (hazard.hitRacers.has(racer.id)) continue;
+
+                const dx = racer.position.x - hazard.x;
+                const dz = racer.position.z - hazard.z;
+                const hitDist = hazard.radius + 4.2;
+                if (dx * dx + dz * dz < hitDist * hitDist) {
+                    hazard.hitRacers.add(racer.id);
+                    racer.applySlowdown(0.70, 1.5);
+                    playSlimeSound(time);
+                    spawnFootstepMist(hazard.x, hazard.z, 3.6);
+                }
+            }
+        } else if (hazard.type === 'leaf') {
+            if (hazard.scattered) continue; // Once scattered, cannot affect other racers
+
+            for (let i = 0; i < racers.length; i++) {
+                const racer = racers[i];
+                if (racer.finished) continue;
+
+                const dx = racer.position.x - hazard.x;
+                const dz = racer.position.z - hazard.z;
+                const hitDist = hazard.radius + 4.5;
+                if (dx * dx + dz * dz < hitDist * hitDist) {
+                    hazard.scattered = true;
+                    hazard.scatterTime = 0;
+                    racer.applySlowdown(0.85, 1.0);
+                    playLeavesSound(time);
+
+                    // Scatter leaves outward and forward
+                    for (let l = 0; l < hazard.leaves.length; l++) {
+                        const leaf = hazard.leaves[l];
+                        leaf.vx = (Math.random() - 0.5) * 26 + (dx > 0 ? -4 : 4);
+                        leaf.vy = 7 + Math.random() * 15;
+                        leaf.vz = 18 + Math.random() * 32;
+                        leaf.rotVx = (Math.random() - 0.5) * 14;
+                        leaf.rotVy = (Math.random() - 0.5) * 14;
+                        leaf.rotVz = (Math.random() - 0.5) * 14;
+                    }
+                    break; // First impact scatters the pile
+                }
+            }
+        }
+    }
+}
+
+function updateHazardAnimations(delta, time) {
+    for (let h = 0; h < activeHazards.length; h++) {
+        const hazard = activeHazards[h];
+        if (hazard.type === 'slime') {
+            // Subtle squishy breathing animation
+            const pulse = 1.0 + Math.sin(time * 3.5 + h) * 0.04;
+            hazard.mesh.scale.set(hazard.baseScale * pulse, hazard.baseScale * (2 - pulse), hazard.baseScale * pulse);
+        } else if (hazard.type === 'leaf' && hazard.scattered) {
+            hazard.scatterTime += delta;
+            for (let l = 0; l < hazard.leaves.length; l++) {
+                const leaf = hazard.leaves[l];
+                leaf.mesh.position.x += leaf.vx * delta;
+                leaf.mesh.position.y += leaf.vy * delta;
+                leaf.mesh.position.z += leaf.vz * delta;
+                leaf.vy -= 26 * delta; // Gravity
+                leaf.mesh.rotation.x += leaf.rotVx * delta;
+                leaf.mesh.rotation.y += leaf.rotVy * delta;
+                leaf.mesh.rotation.z += leaf.rotVz * delta;
+
+                if (leaf.mesh.position.y < 0.04) {
+                    leaf.mesh.position.y = 0.04;
+                    leaf.vx *= 0.65;
+                    leaf.vz *= 0.65;
+                }
+                if (hazard.scatterTime > 2.0) {
+                    leaf.mesh.scale.multiplyScalar(Math.max(0, 1 - delta * 3.5));
+                }
+            }
+        }
+    }
+}
+
 const jackLanternMaterials = [];
 
 // Track Siding Layout Parameters (used for siding placement and tree exclusion)
@@ -1009,13 +1253,15 @@ const MonsterModelManager = {
     graveRoot: null,
     rockTemplates: [],
     jackTemplate: null,
+    slimeTemplate: null,
+    leafTemplate: null,
     ready: false,
 
     preloadAll() {
         const startBtn = document.getElementById('start-btn');
         const loadingMsg = document.createElement('div');
         loadingMsg.id = 'loading-msg';
-        loadingMsg.textContent = 'Loading arcade assets… 0/12';
+        loadingMsg.textContent = 'Loading arcade assets… 0/14';
         loadingMsg.style.cssText = 'margin-top:10px;font-size:0.85rem;color:#aaa;letter-spacing:1px;';
 
         const btnParent = startBtn?.parentNode;
@@ -1023,7 +1269,7 @@ const MonsterModelManager = {
         if (startBtn) { startBtn.disabled = true; startBtn.style.cursor = 'not-allowed'; }
 
         let loadedCount = 0;
-        const totalItems = 12;
+        const totalItems = 14;
 
         const updateLoadingProgress = () => {
             loadedCount++;
@@ -1274,7 +1520,91 @@ const MonsterModelManager = {
             );
         });
 
-        // 6. Preload Creepster font so countdown numbers render immediately in Creepster font
+        // 6. Preload Environment slime.glb (Track Hazard Slime)
+        // Attribution: "Slime" (https://skfb.ly/orDYU) by ColinCharleson is licensed under CC BY 4.0
+        const slimePromise = new Promise((resolve) => {
+            loader.load(
+                'models/slime.glb',
+                (gltf) => {
+                    const slimeRoot = gltf.scene;
+                    slimeRoot.updateMatrixWorld(true);
+                    const box = new THREE.Box3().setFromObject(slimeRoot);
+                    const center = new THREE.Vector3();
+                    box.getCenter(center);
+
+                    slimeRoot.position.x = -center.x;
+                    slimeRoot.position.z = -center.z;
+                    slimeRoot.position.y = -box.min.y;
+
+                    slimeRoot.traverse((c) => {
+                        if (c.isMesh) {
+                            c.castShadow = true;
+                            c.receiveShadow = true;
+                            if (c.material) {
+                                c.material.roughness = 0.28;
+                                c.material.metalness = 0.12;
+                            }
+                        }
+                    });
+
+                    const group = new THREE.Group();
+                    group.add(slimeRoot);
+                    this.slimeTemplate = group;
+
+                    updateLoadingProgress();
+                    resolve();
+                },
+                undefined,
+                (err) => {
+                    console.warn('[MonsterModelManager] Failed to load models/slime.glb:', err);
+                    updateLoadingProgress();
+                    resolve();
+                }
+            );
+        });
+
+        // 7. Preload Environment leaf.glb (Track Hazard Leaf Pile)
+        // Attribution: "Autumn Leaf" (https://skfb.ly/pOpHF) by keatura is licensed under CC BY 4.0
+        const leafPromise = new Promise((resolve) => {
+            loader.load(
+                'models/leaf.glb',
+                (gltf) => {
+                    const leafMeshGroup = new THREE.Group();
+                    gltf.scene.traverse((c) => {
+                        if (c.isMesh) {
+                            const cloneMesh = c.clone();
+                            cloneMesh.castShadow = true;
+                            cloneMesh.receiveShadow = true;
+                            if (cloneMesh.material) {
+                                cloneMesh.material.roughness = 0.84;
+                                cloneMesh.material.metalness = 0.05;
+                            }
+                            leafMeshGroup.add(cloneMesh);
+                        }
+                    });
+                    leafMeshGroup.updateMatrixWorld(true);
+                    const box = new THREE.Box3().setFromObject(leafMeshGroup);
+                    const center = new THREE.Vector3();
+                    box.getCenter(center);
+                    leafMeshGroup.position.set(-center.x, -box.min.y, -center.z);
+
+                    const group = new THREE.Group();
+                    group.add(leafMeshGroup);
+                    this.leafTemplate = group;
+
+                    updateLoadingProgress();
+                    resolve();
+                },
+                undefined,
+                (err) => {
+                    console.warn('[MonsterModelManager] Failed to load models/leaf.glb:', err);
+                    updateLoadingProgress();
+                    resolve();
+                }
+            );
+        });
+
+        // 8. Preload Creepster font so countdown numbers render immediately in Creepster font
         const fontPromise = (typeof document !== 'undefined' && document.fonts && document.fonts.load)
             ? document.fonts.load("200px 'Creepster'").catch(e => console.warn("Creepster preload warning:", e))
             : Promise.resolve();
@@ -1285,9 +1615,12 @@ const MonsterModelManager = {
             gravePromise,
             rockPromise,
             jackPromise,
+            slimePromise,
+            leafPromise,
             fontPromise
         ]).then(() => {
             this.ready = true;
+            generateTrackHazards();
             if (loadingMsg) loadingMsg.remove();
             const failedNames = MONSTER_MANIFEST.filter(e => this._failed[e.id]).map(e => e.name);
             if (failedNames.length > 0) {
@@ -1379,6 +1712,10 @@ class Zoombie {
         this.swerveDuration = 0;
         this.lastCollisionTime = -10;
 
+        // Hazard slowdown dynamics (slime: 70% for 1.5s; leaves: 85% for 1.0s)
+        this.slowdownMultiplier = 1.0;
+        this.slowdownTimer = 0;
+
         // Main tilt group for chassis bank/bounce
         this.kartTiltGroup = new THREE.Group();
         this.mesh.add(this.kartTiltGroup);
@@ -1407,6 +1744,11 @@ class Zoombie {
         this.addNameLabel();
         this.resetToStartLine();
         scene.add(this.mesh);
+    }
+
+    applySlowdown(multiplier, duration) {
+        this.slowdownMultiplier = multiplier;
+        this.slowdownTimer = duration;
     }
 
     triggerCollisionSwerve(otherRacer, time, nx) {
@@ -1476,6 +1818,9 @@ class Zoombie {
         this.swerveVelX = 0;
         this.swerveDuration = 0;
         this.lastCollisionTime = -10;
+
+        this.slowdownMultiplier = 1.0;
+        this.slowdownTimer = 0;
 
         this.mesh.position.set(this.startX, 0, 0);
         this.mesh.rotation.set(0, 0, 0);
@@ -1572,6 +1917,15 @@ class Zoombie {
         const distRemaining = CONFIG.raceDistance - this.position.z;
         if (distRemaining < 320 && distRemaining > 0) targetSpeed *= 1.12;
 
+        // Apply hazard slowdown effect (slime: 70% for 1.5s; leaves: 85% for 1.0s)
+        if (this.slowdownTimer > 0) {
+            this.slowdownTimer -= delta;
+        } else if (this.slowdownMultiplier < 1.0) {
+            this.slowdownMultiplier = THREE.MathUtils.lerp(this.slowdownMultiplier, 1.0, Math.min(1.0, 3.2 * delta));
+            if (this.slowdownMultiplier > 0.99) this.slowdownMultiplier = 1.0;
+        }
+        targetSpeed *= this.slowdownMultiplier;
+
         this.currentSpeed = targetSpeed;
         this.position.z += targetSpeed * delta;
 
@@ -1659,7 +2013,7 @@ class Zoombie {
     }
 
     update(delta, time) {
-        if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
+        if (raceState === RACE_STATE.READY || raceState === RACE_STATE.INTRO || raceState === RACE_STATE.COUNTDOWN) {
             this.updateReadyPose(time);
             return;
         }
@@ -1973,6 +2327,7 @@ raceSelect.addEventListener('change', (e) => {
     if (speedEl) speedEl.innerText = "0";
     updateRacerPreview();
     initRacers();
+    generateTrackHazards();
 });
 
 if (aboutBtn && aboutModal && closeAboutBtn) {
@@ -2003,6 +2358,7 @@ saveConfigBtn.addEventListener('click', () => {
     populateRaceSelector();
     updateRacerPreview();
     initRacers();
+    generateTrackHazards();
     configModal.classList.add('hidden');
 });
 
@@ -2024,26 +2380,23 @@ document.getElementById('start-btn').addEventListener('click', async () => {
 
     startScreen.classList.add('hidden');
 
-    // Reset all racers cleanly onto the starting line in READY/COUNTDOWN stance
+    // Reset all racers cleanly onto the starting line in READY/INTRO stance
     resetRacersToStartGrid();
+    generateTrackHazards();
     firstFinishTriggered = false;
-    setRaceState(RACE_STATE.COUNTDOWN);
 
-    camera.position.set(0, 18, 54);
-    cameraLookAt.set(0, 6.0, 0);
-    camera.lookAt(cameraLookAt);
+    // Start camera intro flyby panning across the racers
+    introFlybyTimer = 0;
+    introFlybyActive = true;
+    setRaceState(RACE_STATE.INTRO);
 
     raceAudio.init();
 
-    // Play engine.mp3 once at the very start of each race
+    // Engine rev repeats while camera is panning racers at the start
     sfxEngine.currentTime = 0;
-    sfxEngine.volume = 0.9;
+    sfxEngine.loop = true;
+    sfxEngine.volume = 0.95;
     sfxEngine.play().catch(e => console.warn("Engine sound failed:", e));
-
-    // Play race.ogg on loop, fading in from 0% to 100% volume at 3 seconds
-    startRaceAudio();
-
-    runCountdownSequence();
 });
 
 function runCountdownSequence() {
@@ -2055,6 +2408,11 @@ function runCountdownSequence() {
     const cd = document.getElementById('countdown-overlay');
     cd.innerHTML = '';
     cd.style.display = 'flex';
+
+    // Play start.ogg (countdown sfx with 3 spaced beeps) as camera reaches starting position
+    sfxStart.currentTime = 0;
+    sfxStart.volume = 1.0;
+    sfxStart.play().catch(e => console.warn("Start sound failed:", e));
 
     let count = 3;
 
@@ -2078,15 +2436,13 @@ function runCountdownSequence() {
         </div>`;
     };
 
-    // Immediately show '3' so the 3-2-1 sequence is crisp and responsive
+    // Immediately display '3'
     showNum(count, '#e1bee7');
-    raceAudio.playCountdown(count);
     count--;
 
     countdownTimerId = setInterval(() => {
         if (count > 0) {
             showNum(count, '#e1bee7');
-            raceAudio.playCountdown(count);
             count--;
         } else {
             clearInterval(countdownTimerId);
@@ -2094,11 +2450,9 @@ function runCountdownSequence() {
             cd.innerHTML = "";
             cd.style.display = 'none';
 
-            sfxStart.currentTime = 0;
-            sfxStart.play().catch(e => console.warn(e));
-
-            // Only now does the race state switch to RACING
+            // Exactly 3 seconds after the start of start.ogg, the race begins!
             setRaceState(RACE_STATE.RACING);
+            startRaceAudio();
         }
     }, 1000);
 }
@@ -2118,12 +2472,21 @@ document.getElementById('restart-btn').addEventListener('click', () => {
     sfxRace.pause();
     sfxRace.currentTime = 0;
     sfxRace.volume = 0;
+
     sfxEngine.pause();
     sfxEngine.currentTime = 0;
+    sfxEngine.loop = false;
+
+    sfxStart.pause();
+    sfxStart.currentTime = 0;
+
+    sfxWinner.pause();
+    sfxWinner.currentTime = 0;
+
+    introFlybyActive = false;
+    introFlybyTimer = 0;
     isFadingInRaceAudio = false;
     raceAudioTargetVolume = 1.0;
-
-    sfxWinner.pause(); sfxWinner.currentTime = 0;
 
     stopFireworks();
 
@@ -2137,6 +2500,7 @@ document.getElementById('restart-btn').addEventListener('click', () => {
     progressFill.style.width = "0%";
     if (speedEl) speedEl.innerText = "0";
     initRacers();
+    generateTrackHazards();
     camera.position.set(0, 18, 54);
     cameraLookAt.set(0, 6.0, 0);
     camera.lookAt(cameraLookAt);
@@ -2298,6 +2662,53 @@ function updateCamera(time, delta, leadRacer) {
         );
         look.copy(winner.position).add(winnerCamOffset);
 
+    } else if (raceState === RACE_STATE.INTRO) {
+        // Camera start line zoom-in and flyby panning across all racers
+        introFlybyTimer += delta;
+        const flybyDuration = 4.2;
+        const p = Math.min(1.0, introFlybyTimer / flybyDuration);
+
+        const lookPoint = new THREE.Vector3(bounds.centerX, 4.0, bounds.centerZ);
+        const unitDir = new THREE.Vector3(0, 0.32, 0.95).normalize();
+        const fitDist = calcFitDistanceForAngle(bounds, unitDir, lookPoint, 0.80, 0.82);
+        const showcaseTarget = new THREE.Vector3().copy(lookPoint).addScaledVector(unitDir, fitDist);
+        const showcaseLook = lookPoint;
+
+        const leftX = bounds.minX - 9.0;
+        const rightX = bounds.maxX + 9.0;
+
+        if (p < 0.28) {
+            // Stage 1: Zoom in from starting showcase to low-angle left side of starting grid
+            const u = p / 0.28;
+            const ease = u * u * (3 - 2 * u);
+            target.lerpVectors(showcaseTarget, new THREE.Vector3(leftX, 5.5, 17.5), ease);
+            look.lerpVectors(showcaseLook, new THREE.Vector3(bounds.minX + 4.0, 3.2, 0.0), ease);
+        } else if (p < 0.72) {
+            // Stage 2: Low-angle dramatic flyby panning across all 8 racers lined up
+            const u = (p - 0.28) / (0.72 - 0.28);
+            const ease = u * u * (3 - 2 * u);
+            const curX = THREE.MathUtils.lerp(leftX, rightX, ease);
+            target.set(curX, 5.2 + Math.sin(ease * Math.PI) * 0.9, 17.0);
+            look.set(curX + 5.0, 3.2, 0.0);
+        } else {
+            // Stage 3: Smoothly pull back to starting showcase position
+            const u = (p - 0.72) / (1.0 - 0.72);
+            const ease = u * u * (3 - 2 * u);
+            target.lerpVectors(new THREE.Vector3(rightX, 6.0, 17.5), showcaseTarget, ease);
+            look.lerpVectors(new THREE.Vector3(bounds.maxX, 3.2, 0.0), showcaseLook, ease);
+        }
+
+        if (p >= 1.0) {
+            // As camera completes pulling back to starting position:
+            // Stop engine rev, transition to COUNTDOWN, and play start.ogg
+            introFlybyActive = false;
+            sfxEngine.pause();
+            sfxEngine.currentTime = 0;
+            sfxEngine.loop = false;
+            setRaceState(RACE_STATE.COUNTDOWN);
+            runCountdownSequence();
+        }
+
     } else if (raceState === RACE_STATE.READY || raceState === RACE_STATE.COUNTDOWN) {
         // Front-facing starting grid showcase camera fitted to safe area
         const lookPoint = new THREE.Vector3(bounds.centerX, 4.0, bounds.centerZ);
@@ -2364,7 +2775,12 @@ let lastProgressPct = -1;
 
 function updateUI(leadRacer, sortedRacers, time) {
     if (speedEl) {
-        const curSpeed = (raceState === RACE_STATE.RACING) ? Math.round(leadRacer.currentSpeed * 3.6) : 0;
+        let curSpeed = 0;
+        if (raceState === RACE_STATE.RACING) {
+            const ratio = leadRacer.currentSpeed / (leadRacer.baseSpeed || 140);
+            const speedValue = Math.round(98 * ratio + Math.sin(time * 6.0 + leadRacer.id) * 1.5);
+            curSpeed = Math.min(120, Math.max(0, speedValue));
+        }
         if (lastSpeedDisplay !== curSpeed) {
             speedEl.textContent = curSpeed;
             lastSpeedDisplay = curSpeed;
@@ -2413,7 +2829,11 @@ function animate() {
         }
     }
 
-    if (raceState === RACE_STATE.RACING) updateFootstepMist(delta);
+    if (raceState === RACE_STATE.RACING) {
+        updateFootstepMist(delta);
+        checkHazardCollisions(time);
+    }
+    updateHazardAnimations(delta, time);
     updateFireworks();
 
     // Update all racers according to the active raceState
@@ -2428,17 +2848,8 @@ function animate() {
         }
     }
 
-    // Dynamic race audio volume management (fade-in over 3s, then smooth stepping on kart finishes)
-    if (isFadingInRaceAudio) {
-        raceAudioFadeTimer += deltaReal;
-        const progress = Math.min(raceAudioFadeTimer / 3.0, 1.0);
-        sfxRace.volume = progress * 1.0;
-        if (progress >= 1.0) {
-            isFadingInRaceAudio = false;
-            sfxRace.volume = 1.0;
-            raceAudioTargetVolume = 1.0;
-        }
-    } else if (sfxRace && !sfxRace.paused) {
+    // Dynamic race audio volume management (decreased by 17% per finished racer)
+    if (sfxRace && !sfxRace.paused) {
         if (Math.abs(sfxRace.volume - raceAudioTargetVolume) > 0.005) {
             sfxRace.volume = THREE.MathUtils.lerp(sfxRace.volume, raceAudioTargetVolume, Math.min(1.0, deltaReal * 4.0));
         } else {

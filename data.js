@@ -25,6 +25,20 @@ const APP_INFO = {
             author: "Sergio Sotomayor",
             license: "Creative Commons Attribution",
             licenseUrl: "http://creativecommons.org/licenses/by/4.0/"
+        },
+        {
+            title: "Slime",
+            url: "https://skfb.ly/orDYU",
+            author: "ColinCharleson",
+            license: "Creative Commons Attribution",
+            licenseUrl: "http://creativecommons.org/licenses/by/4.0/"
+        },
+        {
+            title: "Autumn Leaf",
+            url: "https://skfb.ly/pOpHF",
+            author: "keatura",
+            license: "Creative Commons Attribution",
+            licenseUrl: "http://creativecommons.org/licenses/by/4.0/"
         }
     ],
     copyright: `© ${new Date().getFullYear()} Shaun Daubney. All rights reserved.`

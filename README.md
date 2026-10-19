@@ -129,5 +129,5 @@ The following third-party 3D environment assets are used under the Creative Comm
 * "Low poly Rocks" (https://skfb.ly/pwJCw) by Logan S. is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 * "Toon Tree 02" (https://skfb.ly/JL7F) by Sergio Sotomayor is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 * "Slime" (https://skfb.ly/orDYU) by ColinCharleson is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
-* "Autumn Leaf" (https://skfb.ly/pOpHF) by keatura is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+* "Mario Leaf" (https://skfb.ly/opLXC) by Twisty_z is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 

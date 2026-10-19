@@ -102,7 +102,7 @@ function playThudSound(time) {
 const SLIME_POOL_SIZE = 4;
 const slimeAudioPool = Array.from({ length: SLIME_POOL_SIZE }, () => {
     const a = new Audio('audio/slime.ogg');
-    a.volume = 0.95;
+    a.volume = 0.85; // Decreased by 10%
     return a;
 });
 let slimePoolIndex = 0;
@@ -120,7 +120,7 @@ function playSlimeSound(time) {
 const LEAF_POOL_SIZE = 4;
 const leafAudioPool = Array.from({ length: LEAF_POOL_SIZE }, () => {
     const a = new Audio('audio/leaves.ogg');
-    a.volume = 0.95;
+    a.volume = 1.0; // Increased volume (+20% boosted)
     return a;
 });
 let leafPoolIndex = 0;
@@ -699,7 +699,7 @@ landscapeGroup.add(rocksGroup);
 const propsGroup = new THREE.Group();
 landscapeGroup.add(propsGroup);
 
-// Track Hazard Groups & Dynamic State (Slime puddles & Autumn Leaf piles)
+// Track Hazard Groups & Dynamic State (Slime puddles & Mario Leaf piles)
 const hazardsGroup = new THREE.Group();
 landscapeGroup.add(hazardsGroup);
 
@@ -761,7 +761,7 @@ function generateTrackHazards() {
         }
     }
 
-    // 2. Generate Leaf Pile Hazards (leaf.glb small piles)
+    // 2. Generate Leaf Pile Hazards (Mario Leaf small piles)
     if (MonsterModelManager.leafTemplate) {
         for (let i = 0; i < leafCount; i++) {
             const z = pickValidZ();
@@ -779,15 +779,15 @@ function generateTrackHazards() {
                 const angle = Math.random() * Math.PI * 2;
                 const lx = Math.cos(angle) * dist;
                 const lz = Math.sin(angle) * dist;
-                const ly = Math.max(0, (1 - dist / 5.0) * 1.3) + Math.random() * 0.35;
+                const ly = Math.max(0, (1 - dist / 5.0) * 0.85) + Math.random() * 0.25;
 
                 leafMesh.position.set(lx, ly, lz);
                 leafMesh.rotation.set(
-                    (Math.random() - 0.5) * 0.9,
+                    (Math.random() - 0.5) * 0.45,
                     Math.random() * Math.PI * 2,
-                    (Math.random() - 0.5) * 0.9
+                    (Math.random() - 0.5) * 0.45
                 );
-                const lScale = 1.35 + Math.random() * 0.5;
+                const lScale = 0.85 + Math.random() * 0.35;
                 leafMesh.scale.setScalar(lScale);
                 pileGroup.add(leafMesh);
 
@@ -1563,33 +1563,37 @@ const MonsterModelManager = {
             );
         });
 
-        // 7. Preload Environment leaf.glb (Track Hazard Leaf Pile)
-        // Attribution: "Autumn Leaf" (https://skfb.ly/pOpHF) by keatura is licensed under CC BY 4.0
+        // 7. Preload Environment leaf.glb (Track Hazard Mario Leaf Pile)
+        // Attribution: "Mario Leaf" (https://skfb.ly/opLXC) by Twisty_z is licensed under CC BY 4.0
         const leafPromise = new Promise((resolve) => {
             loader.load(
                 'models/leaf.glb',
                 (gltf) => {
-                    const leafMeshGroup = new THREE.Group();
-                    gltf.scene.traverse((c) => {
-                        if (c.isMesh) {
-                            const cloneMesh = c.clone();
-                            cloneMesh.castShadow = true;
-                            cloneMesh.receiveShadow = true;
-                            if (cloneMesh.material) {
-                                cloneMesh.material.roughness = 0.84;
-                                cloneMesh.material.metalness = 0.05;
-                            }
-                            leafMeshGroup.add(cloneMesh);
-                        }
-                    });
-                    leafMeshGroup.updateMatrixWorld(true);
-                    const box = new THREE.Box3().setFromObject(leafMeshGroup);
+                    const leafRoot = gltf.scene;
+
+                    // Orient the Mario Leaf so it lies flat on the ground with its face/eyes facing upwards
+                    leafRoot.rotation.z = -Math.PI / 2;
+                    leafRoot.updateMatrixWorld(true);
+
+                    const box = new THREE.Box3().setFromObject(leafRoot);
                     const center = new THREE.Vector3();
                     box.getCenter(center);
-                    leafMeshGroup.position.set(-center.x, -box.min.y, -center.z);
+                    leafRoot.position.set(-center.x, -box.min.y, -center.z);
+
+                    leafRoot.traverse((c) => {
+                        if (c.isMesh) {
+                            c.castShadow = true;
+                            c.receiveShadow = true;
+                            if (c.material) {
+                                c.material.roughness = 0.65;
+                                c.material.metalness = 0.05;
+                                c.material.side = THREE.DoubleSide;
+                            }
+                        }
+                    });
 
                     const group = new THREE.Group();
-                    group.add(leafMeshGroup);
+                    group.add(leafRoot);
                     this.leafTemplate = group;
 
                     updateLoadingProgress();

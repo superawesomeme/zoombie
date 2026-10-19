@@ -34,9 +34,9 @@ const APP_INFO = {
             licenseUrl: "http://creativecommons.org/licenses/by/4.0/"
         },
         {
-            title: "Autumn Leaf",
-            url: "https://skfb.ly/pOpHF",
-            author: "keatura",
+            title: "Mario Leaf",
+            url: "https://skfb.ly/opLXC",
+            author: "Twisty_z",
             license: "Creative Commons Attribution",
             licenseUrl: "http://creativecommons.org/licenses/by/4.0/"
         }
@@ -75,7 +75,7 @@ const DEFAULT_RACES = [
     {
         id: "race_2",
         name: "Locksbridge Limbo",
-        racers: ["Vlad the Inhaler", "Pump N'Grind", "Pharaoh Williams", "Boris Car-loff", "Sheet Faced", "Blair Twitch", "Hairy Potter", "Skelly Kelly"]
+        racers: ["Vlad the Inhaler", "Pump N'Grind", "Pharaoh Williams", "Boris Car-loff", "Sheet Faced", "Blair Twitch", "Hairy Potter", "Ned Skelly"]
     },
     {
         id: "race_3",

@@ -721,6 +721,22 @@ function generateTrackHazards() {
 
     const placedZ = [];
 
+    // Distribute hazards across all 8 racer lanes so racers 1 and 8 have an equal chance of encountering hazards
+    const laneSpacing = 13.0;
+    const leftBound = -((CONFIG.racerCount - 1) * laneSpacing) / 2; // -45.5m (aligned with Racer 1)
+    let lanePool = [];
+
+    function pickLaneX() {
+        if (lanePool.length === 0) {
+            // Full shuffled deck of all 8 lanes so all racers receive hazards evenly
+            lanePool = Array.from({ length: CONFIG.racerCount }, (_, idx) => idx).sort(() => Math.random() - 0.5);
+        }
+        const laneIdx = lanePool.pop();
+        const laneX = leftBound + (laneIdx * laneSpacing);
+        // Add subtle organic jitter (+/- 2.5m) within the 13m lane width
+        return laneX + (Math.random() - 0.5) * 5.0;
+    }
+
     function pickValidZ() {
         for (let sep = minSeparation; sep >= minSeparation * 0.75; sep *= 0.9) {
             for (let attempts = 0; attempts < 400; attempts++) {
@@ -741,7 +757,7 @@ function generateTrackHazards() {
     if (MonsterModelManager.slimeTemplate) {
         for (let i = 0; i < slimeCount; i++) {
             const z = pickValidZ();
-            const x = (Math.random() - 0.5) * 78;
+            const x = pickLaneX();
 
             const slimeMesh = MonsterModelManager.slimeTemplate.clone(true);
             const scale = 5.2 + Math.random() * 1.2;
@@ -767,7 +783,7 @@ function generateTrackHazards() {
     if (MonsterModelManager.leafTemplate) {
         for (let i = 0; i < leafCount; i++) {
             const z = pickValidZ();
-            const x = (Math.random() - 0.5) * 78;
+            const x = pickLaneX();
 
             const pileGroup = new THREE.Group();
             pileGroup.position.set(x, 0.05, z);

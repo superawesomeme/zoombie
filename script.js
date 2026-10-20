@@ -43,6 +43,136 @@ let storedRaces = [];
 let currentRaceIndex = 0;
 let gameSpeed = 1.0;
 
+// ============================================
+// DUAL-SCREEN BROADCAST CHANNEL & REMOTE SYNC
+// ============================================
+const broadcastChannel = new BroadcastChannel(typeof BROADCAST_CHANNEL_NAME !== 'undefined' ? BROADCAST_CHANNEL_NAME : 'zoombie_race_channel');
+let lastAdminHeartbeat = 0;
+
+function updateStatusPill() {
+    const pill = document.getElementById('status-pill');
+    const text = document.getElementById('status-text');
+    if (!pill || !text) return;
+
+    if (typeof MonsterModelManager === 'undefined' || !MonsterModelManager.ready) {
+        pill.className = 'status-pill status-amber';
+        return;
+    }
+
+    const isConnected = (Date.now() - lastAdminHeartbeat < 4000);
+    if (isConnected) {
+        pill.className = 'status-pill status-green';
+        text.textContent = 'READY';
+    } else {
+        pill.className = 'status-pill status-red';
+        text.textContent = 'OFFLINE';
+    }
+}
+setInterval(updateStatusPill, 1000);
+
+broadcastChannel.onmessage = (event) => {
+    const msg = event.data;
+    if (!msg || !msg.type) return;
+
+    switch (msg.type) {
+        case 'PING':
+        case 'ADMIN_HEARTBEAT':
+            lastAdminHeartbeat = Date.now();
+            updateStatusPill();
+            broadcastChannel.postMessage({
+                type: 'PROJECTOR_STATUS',
+                ready: Boolean(typeof MonsterModelManager !== 'undefined' && MonsterModelManager.ready),
+                raceState: raceState,
+                currentRaceIndex: currentRaceIndex
+            });
+            break;
+
+        case 'ADMIN_DISCONNECT':
+            lastAdminHeartbeat = 0;
+            updateStatusPill();
+            break;
+
+        case 'BETS_SUBMITTED': {
+            const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
+            if (session && typeof session.currentRaceIndex === 'number' && session.currentRaceIndex !== currentRaceIndex) {
+                currentRaceIndex = session.currentRaceIndex;
+                if (typeof raceSelect !== 'undefined' && raceSelect) raceSelect.value = currentRaceIndex;
+                if (typeof initRacers === 'function') initRacers();
+                if (typeof generateTrackHazards === 'function') generateTrackHazards();
+            }
+            if (typeof updateRacerPreview === 'function') updateRacerPreview();
+            break;
+        }
+
+        case 'START_RACE':
+            if (typeof MonsterModelManager !== 'undefined' && MonsterModelManager.ready && raceState === RACE_STATE.READY) {
+                const startBtn = document.getElementById('start-btn');
+                if (startBtn && !startBtn.disabled) {
+                    startBtn.click();
+                }
+            }
+            break;
+
+        case 'NEXT_RACE': {
+            const restartBtn = document.getElementById('restart-btn');
+            if (restartBtn) restartBtn.click();
+            break;
+        }
+
+        case 'SELECT_RACE':
+            if (typeof msg.raceIndex === 'number' && storedRaces[msg.raceIndex]) {
+                currentRaceIndex = msg.raceIndex;
+                if (typeof raceSelect !== 'undefined' && raceSelect) raceSelect.value = currentRaceIndex;
+                setRaceState(RACE_STATE.READY);
+                firstFinishTriggered = false;
+                if (typeof progressFill !== 'undefined' && progressFill) progressFill.style.width = "0%";
+                if (typeof speedEl !== 'undefined' && speedEl) speedEl.innerText = "0";
+                if (typeof updateRacerPreview === 'function') updateRacerPreview();
+                if (typeof initRacers === 'function') initRacers();
+                if (typeof generateTrackHazards === 'function') generateTrackHazards();
+            }
+            break;
+
+        case 'ROSTER_UPDATED':
+            if (typeof loadRaceData === 'function') loadRaceData();
+            if (typeof populateRaceSelector === 'function') populateRaceSelector();
+            if (typeof updateRacerPreview === 'function') updateRacerPreview();
+            if (typeof initRacers === 'function') initRacers();
+            if (typeof generateTrackHazards === 'function') generateTrackHazards();
+            break;
+
+        case 'SESSION_RESET':
+            window.location.reload();
+            break;
+    }
+};
+
+// Web Audio Autoplay Unlock
+function unlockAudioOnce() {
+    [sfxRace, sfxEngine, sfxStart, sfxWinner].forEach(a => {
+        try {
+            const p = a.play();
+            if (p !== undefined) {
+                p.then(() => {
+                    a.pause();
+                    a.currentTime = 0;
+                }).catch(() => {});
+            }
+        } catch (e) {}
+    });
+}
+window.addEventListener('pointerdown', unlockAudioOnce, { once: true });
+window.addEventListener('keydown', unlockAudioOnce, { once: true });
+
+// Accidental Tab Close Protection
+window.addEventListener('beforeunload', (e) => {
+    const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
+    if (raceState !== RACE_STATE.READY || (session && Array.isArray(session.history) && session.history.length > 0)) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
+
 // Explicit state tracking + backwards-compatible boolean flags
 let raceState = RACE_STATE.READY;
 let isRacing = false;
@@ -244,6 +374,10 @@ function loadRaceData() {
     } else {
         storedRaces = [];
     }
+    const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
+    if (session && typeof session.currentRaceIndex === 'number' && session.currentRaceIndex >= 0 && session.currentRaceIndex < storedRaces.length) {
+        currentRaceIndex = session.currentRaceIndex;
+    }
     populateRaceSelector();
     updateRacerPreview();
 }
@@ -261,6 +395,28 @@ function resetData() {
 }
 
 function loadAboutInfo() {
+    const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
+    const sessionIdEl = document.getElementById('about-session-id');
+    if (sessionIdEl && session) {
+        sessionIdEl.textContent = session.sessionId;
+    }
+
+    const newSessionBtn = document.getElementById('new-session-btn');
+    if (newSessionBtn && !newSessionBtn._bound) {
+        newSessionBtn._bound = true;
+        newSessionBtn.addEventListener('click', () => {
+            if (confirm("Start a new session? This will clear all current betting history and reset both screens to Race 1.")) {
+                if (typeof resetSessionData === 'function') {
+                    resetSessionData();
+                }
+                if (typeof broadcastChannel !== 'undefined') {
+                    broadcastChannel.postMessage({ type: 'SESSION_RESET' });
+                }
+                window.location.reload();
+            }
+        });
+    }
+
     const container = document.getElementById('about-content-container');
     if (container && typeof APP_INFO !== 'undefined') {
         let creditsHtml = '';
@@ -1277,13 +1433,11 @@ const MonsterModelManager = {
 
     preloadAll() {
         const startBtn = document.getElementById('start-btn');
-        const loadingMsg = document.createElement('div');
-        loadingMsg.id = 'loading-msg';
-        loadingMsg.textContent = 'Loading arcade assets… 0/14';
-        loadingMsg.style.cssText = 'margin-top:10px;font-size:0.85rem;color:#aaa;letter-spacing:1px;';
+        const statusPill = document.getElementById('status-pill');
+        const statusText = document.getElementById('status-text');
+        if (statusPill) statusPill.className = 'status-pill status-amber';
+        if (statusText) statusText.textContent = 'LOADING 0%';
 
-        const btnParent = startBtn?.parentNode;
-        if (btnParent) btnParent.insertBefore(loadingMsg, startBtn);
         if (startBtn) { startBtn.disabled = true; startBtn.style.cursor = 'not-allowed'; }
 
         let loadedCount = 0;
@@ -1291,7 +1445,8 @@ const MonsterModelManager = {
 
         const updateLoadingProgress = () => {
             loadedCount++;
-            if (loadingMsg) loadingMsg.textContent = `Loading arcade assets… ${loadedCount}/${totalItems}`;
+            const pct = Math.round((loadedCount / totalItems) * 100);
+            if (statusText) statusText.textContent = `LOADING ${pct}%`;
         };
 
         // 1. Preload 8 Character Racers (Draco-compressed Meshy clay assets)
@@ -1643,15 +1798,16 @@ const MonsterModelManager = {
         ]).then(() => {
             this.ready = true;
             generateTrackHazards();
-            if (loadingMsg) loadingMsg.remove();
             const failedNames = MONSTER_MANIFEST.filter(e => this._failed[e.id]).map(e => e.name);
             if (failedNames.length > 0) {
                 const errEl = document.createElement('div');
                 errEl.style.cssText = 'margin-top:8px;font-size:0.8rem;color:#c042ff;';
                 errEl.textContent = `Using fallback for: ${failedNames.join(', ')}`;
+                const btnParent = startBtn?.parentNode;
                 if (btnParent && startBtn) btnParent.insertBefore(errEl, startBtn);
             }
             activateStartButton();
+            updateStatusPill();
         });
     },
 
@@ -2299,12 +2455,6 @@ const aboutBtn = document.getElementById('about-btn');
 const aboutModal = document.getElementById('about-modal');
 const closeAboutBtn = document.getElementById('close-about-btn');
 
-const manageBtn = document.getElementById('manage-btn');
-const configModal = document.getElementById('config-modal');
-const cancelConfigBtn = document.getElementById('cancel-config-btn');
-const saveConfigBtn = document.getElementById('save-config-btn');
-const resetDataBtn = document.getElementById('reset-data-btn');
-
 function populateRaceSelector() {
     raceSelect.innerHTML = '';
     storedRaces.forEach((race, index) => {
@@ -2320,6 +2470,9 @@ function updateRacerPreview() {
     const raceConfig = storedRaces[currentRaceIndex] || (typeof DEFAULT_RACES !== 'undefined' ? DEFAULT_RACES[0] : null);
     if (!raceConfig) return;
 
+    const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
+    const isBetsSubmitted = Boolean(session && session.betsSubmitted);
+
     const names = raceConfig.racers || raceConfig.ducks || [];
     const types = (typeof MONSTER_TYPES !== 'undefined') ? MONSTER_TYPES : [];
     let html = '';
@@ -2330,11 +2483,25 @@ function updateRacerPreview() {
         const hex = '#' + color.toString(16).padStart(6, '0');
         const name = names[i] || `Zoombie ${i + 1}`;
         const mType = types[i] || '';
+
+        let badgeHtml = '';
+        if (isBetsSubmitted && session) {
+            const t = session.currentBets ? parseInt(session.currentBets[i], 10) || 0 : 0;
+            const div = session.currentDividends ? Number(session.currentDividends[i]) || 0 : 0;
+            if (t > 0 && div > 0) {
+                badgeHtml = `<div class="preview-payout">£${div.toFixed(2)}</div>`;
+            } else {
+                badgeHtml = `<div class="preview-payout no-bets">NO BETS</div>`;
+            }
+        } else {
+            badgeHtml = `<div class="preview-type">${mType}</div>`;
+        }
+
         html += `
             <div class="preview-item">
                 <div class="preview-num" style="background:${hex}; color:${txtCol};">${i + 1}</div>
                 <div class="preview-name">${name}</div>
-                <div class="preview-type">${mType}</div>
+                ${badgeHtml}
             </div>`;
     }
     if (racerPreview) racerPreview.innerHTML = html;
@@ -2343,6 +2510,18 @@ const updateDuckPreview = updateRacerPreview; // Backward-compatible alias
 
 raceSelect.addEventListener('change', (e) => {
     currentRaceIndex = parseInt(e.target.value, 10);
+    const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
+    if (session) {
+        session.currentRaceIndex = currentRaceIndex;
+        session.currentBets = [0, 0, 0, 0, 0, 0, 0, 0];
+        session.currentDividends = [0, 0, 0, 0, 0, 0, 0, 0];
+        session.betsSubmitted = false;
+        session.toteState = 'BETTING';
+        saveSessionData(session);
+        if (typeof broadcastChannel !== 'undefined') {
+            broadcastChannel.postMessage({ type: 'PROJECTOR_RACE_CHANGED', raceIndex: currentRaceIndex });
+        }
+    }
     setRaceState(RACE_STATE.READY);
     firstFinishTriggered = false;
     progressFill.style.width = "0%";
@@ -2356,38 +2535,6 @@ if (aboutBtn && aboutModal && closeAboutBtn) {
     aboutBtn.addEventListener('click', () => aboutModal.classList.remove('hidden'));
     closeAboutBtn.addEventListener('click', () => aboutModal.classList.add('hidden'));
 }
-
-manageBtn.addEventListener('click', () => {
-    configModal.classList.remove('hidden');
-    for (let i = 0; i < 8; i++) document.getElementById(`p-name-${i}`).value = "";
-    document.getElementById('new-race-name').value = "";
-});
-
-cancelConfigBtn.addEventListener('click', () => configModal.classList.add('hidden'));
-
-saveConfigBtn.addEventListener('click', () => {
-    const rName = document.getElementById('new-race-name').value.trim() || "Untitled Haunt";
-    const dNames = [];
-    for (let i = 0; i < 8; i++) {
-        const val = document.getElementById(`p-name-${i}`).value.trim();
-        dNames.push(val || `Zoombie ${i + 1}`);
-    }
-    const newRace = { id: "custom_" + Date.now(), name: rName, racers: dNames, ducks: dNames };
-    storedRaces.push(newRace);
-    saveRaceData();
-    currentRaceIndex = storedRaces.length - 1;
-    setRaceState(RACE_STATE.READY);
-    populateRaceSelector();
-    updateRacerPreview();
-    initRacers();
-    generateTrackHazards();
-    configModal.classList.add('hidden');
-});
-
-resetDataBtn.addEventListener('click', () => {
-    resetData();
-    configModal.classList.add('hidden');
-});
 
 document.getElementById('start-btn').addEventListener('click', async () => {
     // Guarantee Creepster font is 100% loaded and ready in browser before countdown starts
@@ -2513,6 +2660,20 @@ document.getElementById('restart-btn').addEventListener('click', () => {
     stopFireworks();
 
     currentRaceIndex = (currentRaceIndex + 1) % storedRaces.length;
+
+    const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
+    if (session) {
+        session.currentRaceIndex = currentRaceIndex;
+        session.currentBets = [0, 0, 0, 0, 0, 0, 0, 0];
+        session.currentDividends = [0, 0, 0, 0, 0, 0, 0, 0];
+        session.betsSubmitted = false;
+        session.toteState = 'BETTING';
+        saveSessionData(session);
+        if (typeof broadcastChannel !== 'undefined') {
+            broadcastChannel.postMessage({ type: 'PROJECTOR_RACE_CHANGED', raceIndex: currentRaceIndex });
+        }
+    }
+
     populateRaceSelector();
     updateRacerPreview();
 
@@ -2944,6 +3105,73 @@ function animate() {
 
             winnerText.innerText = `WINNER: #${trueWinner.id + 1} ${trueWinner.name.toUpperCase()}!`;
             winnerText.style.color = trueWinner.lightenedColor || lightenColor(trueWinner.color, 0.4);
+
+            const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
+            const winnerPayoutEl = document.getElementById('winner-payout-text');
+
+            if (session) {
+                const totalTickets = (session.currentBets || []).reduce((sum, n) => sum + (parseInt(n, 10) || 0), 0);
+                const winningTickets = (session.currentBets && session.currentBets[trueWinner.id]) ? parseInt(session.currentBets[trueWinner.id], 10) : 0;
+                const dividend = (session.currentDividends && session.currentDividends[trueWinner.id]) ? Number(session.currentDividends[trueWinner.id]) : 0;
+
+                if (winnerPayoutEl) {
+                    if (session.betsSubmitted || totalTickets > 0) {
+                        if (winningTickets > 0) {
+                            winnerPayoutEl.innerText = `WINNING TICKETS PAY £${dividend.toFixed(2)} EACH`;
+                            winnerPayoutEl.style.display = 'block';
+                        } else if (totalTickets > 0) {
+                            winnerPayoutEl.innerText = `NO WINNING TICKETS - ROLLOVER / CLUB POT!`;
+                            winnerPayoutEl.style.display = 'block';
+                        } else {
+                            winnerPayoutEl.innerText = '';
+                            winnerPayoutEl.style.display = 'none';
+                        }
+                    } else {
+                        winnerPayoutEl.innerText = '';
+                        winnerPayoutEl.style.display = 'none';
+                    }
+                }
+
+                const s = session.settings || DEFAULT_TOTE_SETTINGS;
+                const tPrice = Number(s.ticketPrice) || 1.00;
+                const splitPct = Number(s.prizeSplitPct) || 50;
+                const roundStep = Number(s.roundingStep) || 0.50;
+                const grossPot = totalTickets * tPrice;
+                const initialPrizePool = grossPot * (splitPct / 100);
+                const totalPaidOut = winningTickets * dividend;
+                const clubRetained = grossPot - totalPaidOut;
+
+                const raceConfig = storedRaces[currentRaceIndex] || (typeof DEFAULT_RACES !== 'undefined' ? DEFAULT_RACES[currentRaceIndex] : null) || { id: `race_${currentRaceIndex + 1}`, name: `Race ${currentRaceIndex + 1}` };
+
+                const historyItem = {
+                    raceNumber: (session.history ? session.history.length : 0) + 1,
+                    raceId: raceConfig.id || `race_${currentRaceIndex + 1}`,
+                    raceName: raceConfig.name || `Race ${currentRaceIndex + 1}`,
+                    timestamp: new Date().toISOString(),
+                    ticketPrice: tPrice,
+                    prizeSplitPct: splitPct,
+                    roundingStep: roundStep,
+                    ticketsByRacer: Array.isArray(session.currentBets) ? [...session.currentBets] : [0, 0, 0, 0, 0, 0, 0, 0],
+                    totalTickets: totalTickets,
+                    grossPot: grossPot,
+                    initialPrizePool: initialPrizePool,
+                    winnerId: trueWinner.id,
+                    winnerName: trueWinner.name,
+                    winningTickets: winningTickets,
+                    dividendPerTicket: dividend,
+                    totalPaidOut: totalPaidOut,
+                    clubRetained: clubRetained
+                };
+
+                if (!Array.isArray(session.history)) session.history = [];
+                session.history.push(historyItem);
+                session.toteState = 'FINISHED';
+                saveSessionData(session);
+                if (typeof broadcastChannel !== 'undefined') {
+                    broadcastChannel.postMessage({ type: 'RACE_FINISHED', payload: session });
+                }
+            }
+
             setTimeout(() => { endScreen.classList.remove('hidden'); }, 2000);
 
             fadeOutAudio(sfxRace, 3000);

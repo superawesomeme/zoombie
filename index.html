@@ -63,34 +63,12 @@
 
             <div class="button-row">
                 <button id="about-btn" class="secondary-btn">ABOUT</button>
-                <button id="manage-btn" class="secondary-btn">MANAGE</button>
+                <div id="status-pill" class="status-pill status-amber">
+                    <span class="status-dot"></span>
+                    <span id="status-text">LOADING 0%</span>
+                </div>
                 <button id="start-btn">RACE!</button>
             </div>
-        </div>
-    </div>
-
-    <div id="config-modal" class="hidden">
-        <div class="modal-content">
-            <h2>CREATE NEW EVENT</h2>
-            <div class="input-grid">
-                <div class="inp-group"><label>#1 RED (VAMPIRE)</label><input type="text" id="p-name-0" placeholder="Zoombie Name"></div>
-                <div class="inp-group"><label>#2 ORANGE (PUMPKIN)</label><input type="text" id="p-name-1" placeholder="Zoombie Name"></div>
-                <div class="inp-group"><label>#3 YELLOW (MUMMY)</label><input type="text" id="p-name-2" placeholder="Zoombie Name"></div>
-                <div class="inp-group"><label>#4 GREEN (MONSTER)</label><input type="text" id="p-name-3" placeholder="Zoombie Name"></div>
-                <div class="inp-group"><label>#5 BLUE (GHOST)</label><input type="text" id="p-name-4" placeholder="Zoombie Name"></div>
-                <div class="inp-group"><label>#6 PURPLE (WITCH)</label><input type="text" id="p-name-5" placeholder="Zoombie Name"></div>
-                <div class="inp-group"><label>#7 GREY (WEREWOLF)</label><input type="text" id="p-name-6" placeholder="Zoombie Name"></div>
-                <div class="inp-group"><label>#8 WHITE (SKELETON)</label><input type="text" id="p-name-7" placeholder="Zoombie Name"></div>
-            </div>
-            <div class="inp-group full-width">
-                <label>EVENT NAME</label>
-                <input type="text" id="new-race-name" placeholder="e.g. All Hallows Final">
-            </div>
-            <div class="modal-buttons">
-                <button id="cancel-config-btn" class="secondary-btn">CANCEL</button>
-                <button id="save-config-btn">SAVE EVENT</button>
-            </div>
-            <div class="reset-link" id="reset-data-btn">Reset all data to defaults</div>
         </div>
     </div>
 
@@ -98,6 +76,10 @@
         <div class="modal-content">
             <h2>ABOUT</h2>
             <div id="about-content-container" class="about-text"></div>
+            <div class="about-session-bar">
+                <span>SESSION ID: <strong id="about-session-id">---</strong></span>
+                <button id="new-session-btn" class="secondary-btn">NEW SESSION</button>
+            </div>
             <div class="modal-buttons">
                 <button id="close-about-btn">CLOSE</button>
             </div>
@@ -108,6 +90,7 @@
         <div class="winner-slate">
             <div class="finish-flag">OFFICIAL RESULTS</div>
             <div id="winner-text">WINNER: ZOOMBIE #1</div>
+            <div id="winner-payout-text"></div>
             <button id="restart-btn">NEXT RACE</button>
         </div>
     </div>

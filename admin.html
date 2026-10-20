@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoombie Racing // Tote Controller</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Roboto+Condensed:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="admin.css">
+
+    <link rel="apple-touch-icon" sizes="180x180" href="images/icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="images/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="images/icons/favicon-16x16.png">
+    <link rel="shortcut icon" href="images/icons/favicon.ico">
+</head>
+<body>
+    <header class="admin-header">
+        <div class="header-left">
+            <h1 class="admin-title">ZOOMBIE RACING <span class="title-sub">// TOTE CONTROLLER</span></h1>
+            <div class="session-badge">SESSION ID: <strong id="admin-session-id">---</strong></div>
+        </div>
+
+        <div class="header-center">
+            <div id="projector-status-pill" class="status-pill status-red">
+                <span class="status-dot"></span>
+                <span id="projector-status-text">OFFLINE - OPEN INDEX.HTML</span>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <button id="export-csv-btn" class="header-btn">EXPORT CSV</button>
+            <button id="export-xml-btn" class="header-btn">EXPORT XML</button>
+            <button id="new-session-btn" class="header-btn btn-danger">NEW SESSION</button>
+        </div>
+    </header>
+
+    <nav class="admin-nav">
+        <button class="nav-tab active" data-tab="live">LIVE TOTE &amp; CONTROL</button>
+        <button class="nav-tab" data-tab="races">MANAGE RACES</button>
+        <button class="nav-tab" data-tab="settings">TOTE SETTINGS</button>
+    </nav>
+
+    <main class="admin-content">
+        <!-- TAB 1: LIVE TOTE & CONTROL -->
+        <section id="tab-live" class="tab-pane active">
+            <div class="card active-race-card">
+                <div class="card-header">
+                    <div class="race-select-wrap">
+                        <label for="admin-race-select">ACTIVE EVENT:</label>
+                        <select id="admin-race-select"></select>
+                    </div>
+                    <div class="tote-state-wrap">
+                        <span class="state-label">TOTE STATUS:</span>
+                        <span id="admin-tote-badge" class="state-badge badge-betting">BETTING</span>
+                    </div>
+                    <div class="card-actions">
+                        <button id="edit-bets-btn" class="btn btn-secondary hidden">EDIT BETS</button>
+                        <button id="main-action-btn" class="btn btn-primary">SUBMIT BETS TO SCREEN</button>
+                    </div>
+                </div>
+
+                <!-- Live Summary Strip -->
+                <div class="summary-strip">
+                    <div class="summary-item">
+                        <div class="summary-label">TOTAL TICKETS SOLD</div>
+                        <div class="summary-value" id="stat-total-tickets">0</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">GROSS POT (100%)</div>
+                        <div class="summary-value" id="stat-gross-pot">£0.00</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">TARGET PRIZE POOL</div>
+                        <div class="summary-value highlight-ecto" id="stat-prize-pool">£0.00</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">BASE CLUB SPLIT</div>
+                        <div class="summary-value highlight-purple" id="stat-club-split">£0.00</div>
+                    </div>
+                </div>
+
+                <!-- 8-Racer Betting Table -->
+                <div class="table-responsive">
+                    <table class="tote-table" id="betting-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 80px;">LANE</th>
+                                <th>RACER &amp; MONSTER</th>
+                                <th style="width: 170px;">TICKETS SOLD</th>
+                                <th style="width: 170px;">DIVIDEND PREVIEW</th>
+                                <th style="width: 170px;">LIABILITY / PAYOUT</th>
+                                <th style="width: 170px;">POTENTIAL CLUB CUT</th>
+                            </tr>
+                        </thead>
+                        <tbody id="betting-tbody">
+                            <!-- Rows 0 to 7 generated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Session Race History Table -->
+            <div class="card history-card">
+                <div class="card-header">
+                    <h2>SESSION RACE HISTORY</h2>
+                    <span class="history-count" id="history-count">0 Completed Races</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="history-table" id="history-table">
+                        <thead>
+                            <tr>
+                                <th>RACE #</th>
+                                <th>EVENT NAME</th>
+                                <th>TICKETS (LANES 1-8)</th>
+                                <th>TOTAL TICKETS</th>
+                                <th>GROSS POT</th>
+                                <th>WINNER</th>
+                                <th>WINNING TICKETS</th>
+                                <th>DIVIDEND PAID</th>
+                                <th>TOTAL PAID OUT</th>
+                                <th>NET CLUB PROFIT</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-tbody">
+                            <!-- Generated dynamically -->
+                        </tbody>
+                        <tfoot id="history-tfoot">
+                            <!-- Totals row -->
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: MANAGE RACES -->
+        <section id="tab-races" class="tab-pane">
+            <div class="card">
+                <div class="card-header">
+                    <h2>CURRENT RACE ROSTERS</h2>
+                </div>
+                <div id="roster-list" class="roster-list">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <div class="card create-race-card">
+                <div class="card-header">
+                    <h2>CREATE CUSTOM RACE EVENT</h2>
+                </div>
+                <form id="create-race-form">
+                    <div class="form-group full-width">
+                        <label for="new-event-name">EVENT NAME:</label>
+                        <input type="text" id="new-event-name" placeholder="e.g. Lost Soul Invitational GP" required>
+                    </div>
+
+                    <div class="racer-input-grid" id="racer-input-grid">
+                        <!-- 8 lane inputs generated dynamically -->
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary" id="save-race-btn">SAVE EVENT</button>
+                    </div>
+                </form>
+
+                <div class="reset-rosters-bar">
+                    <button id="reset-rosters-btn" class="btn-link">Reset all race rosters to defaults</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: TOTE SETTINGS -->
+        <section id="tab-settings" class="tab-pane">
+            <div class="card settings-card">
+                <div class="card-header">
+                    <h2>TOTE FINANCIAL SETTINGS</h2>
+                </div>
+                <form id="settings-form" class="settings-form">
+                    <div class="settings-group">
+                        <label for="setting-ticket-price">
+                            <strong>Ticket Price (£):</strong>
+                            <span class="help-text">The price of a single tote ticket in GBP. Default: £1.00</span>
+                        </label>
+                        <input type="number" id="setting-ticket-price" min="0.10" step="0.10" value="1.00" required>
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="setting-prize-split">
+                            <strong>Prize Pool Split (%):</strong>
+                            <span class="help-text">Percentage of gross pot allocated to prize pool (club keeps remainder). Default: 50%</span>
+                        </label>
+                        <div class="input-with-addon">
+                            <input type="number" id="setting-prize-split" min="10" max="100" step="5" value="50" required>
+                            <span class="input-addon">%</span>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="setting-rounding-step">
+                            <strong>Dividend Rounding Rule:</strong>
+                            <span class="help-text">Dividends are rounded down to protect the club pot. Any unallocated pennies from rounding remain in the club retained fund.</span>
+                        </label>
+                        <select id="setting-rounding-step">
+                            <option value="0.50">Round down to nearest 50p (£0.50) [Default]</option>
+                            <option value="1.00">Round down to nearest £1.00 (£1.00)</option>
+                            <option value="0.20">Round down to nearest 20p (£0.20)</option>
+                            <option value="0.10">Round down to nearest 10p (£0.10)</option>
+                            <option value="0.01">Exact penny (£0.01)</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-status-bar">
+                        <span id="settings-save-msg" class="save-indicator">Settings auto-saved to active session.</span>
+                    </div>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <script src="data.js"></script>
+    <script src="admin.js"></script>
+</body>
+</html>

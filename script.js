@@ -2659,9 +2659,13 @@ document.getElementById('restart-btn').addEventListener('click', () => {
 
     stopFireworks();
 
-    currentRaceIndex = (currentRaceIndex + 1) % storedRaces.length;
-
     const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
+    if (session && typeof session.currentRaceIndex === 'number' && session.currentRaceIndex !== currentRaceIndex) {
+        currentRaceIndex = session.currentRaceIndex;
+    } else {
+        currentRaceIndex = (currentRaceIndex + 1) % storedRaces.length;
+    }
+
     if (session) {
         session.currentRaceIndex = currentRaceIndex;
         session.currentBets = [0, 0, 0, 0, 0, 0, 0, 0];
@@ -3100,7 +3104,7 @@ function animate() {
             startFireworks(racers[0].color);
         }
 
-        if (allFinished && raceState !== RACE_STATE.FINISHED) {
+        if (firstFinishTriggered && (allFinished || (time - winnerFinishTime >= 2.0)) && raceState !== RACE_STATE.FINISHED) {
             setRaceState(RACE_STATE.FINISHED);
 
             winnerText.innerText = `WINNER: #${trueWinner.id + 1} ${trueWinner.name.toUpperCase()}!`;
@@ -3172,7 +3176,7 @@ function animate() {
                 }
             }
 
-            setTimeout(() => { endScreen.classList.remove('hidden'); }, 2000);
+            setTimeout(() => { endScreen.classList.remove('hidden'); }, 400);
 
             fadeOutAudio(sfxRace, 3000);
         }

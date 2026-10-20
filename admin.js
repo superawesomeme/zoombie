@@ -93,6 +93,13 @@
                 lastProjectorHeartbeat = Date.now();
                 projectorIsReady = Boolean(msg.ready);
                 updateProjectorStatus();
+                if (msg.raceState === 'FINISHED' && session.toteState !== 'FINISHED') {
+                    session = loadSessionData();
+                    renderAll();
+                } else if (msg.raceState === 'READY' && session.toteState === 'RACING') {
+                    session = loadSessionData();
+                    renderAll();
+                }
                 break;
 
             case 'RACE_FINISHED':
@@ -115,6 +122,13 @@
 
     window.addEventListener('beforeunload', () => {
         broadcastChannel.postMessage({ type: 'ADMIN_DISCONNECT' });
+    });
+
+    window.addEventListener('storage', (e) => {
+        if (e.key === 'zoombieSession_v1') {
+            session = loadSessionData();
+            renderAll();
+        }
     });
 
     // ============================================
@@ -187,7 +201,8 @@
 
             case 'FINISHED':
                 badge.classList.add('badge-finished');
-                mainBtn.textContent = 'LOAD NEXT RACE';
+                badge.textContent = 'WINNER ANNOUNCED';
+                mainBtn.textContent = 'NEXT RACE';
                 mainBtn.className = 'btn btn-primary';
                 mainBtn.disabled = false;
                 editBtn.classList.add('hidden');
@@ -409,15 +424,15 @@
                     broadcastChannel.postMessage({ type: 'START_RACE' });
                     renderAll();
                 } else if (state === 'FINISHED') {
-                    // LOAD NEXT RACE
+                    // NEXT RACE - progress projector and advance session
+                    broadcastChannel.postMessage({ type: 'NEXT_RACE' });
+
                     session.currentRaceIndex = (session.currentRaceIndex + 1) % storedRaces.length;
                     session.currentBets = [0, 0, 0, 0, 0, 0, 0, 0];
                     session.currentDividends = [0, 0, 0, 0, 0, 0, 0, 0];
                     session.betsSubmitted = false;
                     session.toteState = 'BETTING';
                     saveSessionData(session);
-
-                    broadcastChannel.postMessage({ type: 'NEXT_RACE' });
                     renderAll();
                 }
             });

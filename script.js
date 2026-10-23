@@ -1084,6 +1084,232 @@ function updateHazardAnimations(delta, time) {
     }
 }
 
+// ============================================
+// AMBIENT SPOOKY BATS FLYING PAST CAMERA
+// ============================================
+const batsGroup = new THREE.Group();
+scene.add(batsGroup);
+
+let activeBats = [];
+let nextBatFlightTime = 4.0; // Early first flight (4s into session)
+
+function cloneBatModel(source) {
+    if (typeof THREE.SkeletonUtils !== 'undefined' && typeof THREE.SkeletonUtils.clone === 'function') {
+        return THREE.SkeletonUtils.clone(source);
+    }
+    const sourceLookup = new Map();
+    const cloneLookup = new Map();
+    const clone = source.clone();
+    function parallelTraverse(a, b) {
+        sourceLookup.set(b, a);
+        cloneLookup.set(a, b);
+        for (let i = 0; i < a.children.length; i++) {
+            parallelTraverse(a.children[i], b.children[i]);
+        }
+    }
+    parallelTraverse(source, clone);
+    clone.traverse(node => {
+        if (!node.isSkinnedMesh) return;
+        const sourceMesh = sourceLookup.get(node);
+        const sourceBones = sourceMesh.skeleton.bones;
+        node.skeleton = sourceMesh.skeleton.clone();
+        node.bindMatrix.copy(sourceMesh.bindMatrix);
+        node.skeleton.bones = sourceBones.map(bone => cloneLookup.get(bone));
+        node.bind(node.skeleton, node.bindMatrix);
+    });
+    return clone;
+}
+
+function spawnBatSwarm(time) {
+    if (!MonsterModelManager.batTemplate || !camera) return;
+
+    // A flock of 3 to 6 bats
+    const count = 3 + Math.floor(Math.random() * 4);
+
+    const camPos = camera.position.clone();
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
+    const camRight = new THREE.Vector3().crossVectors(camDir, camera.up).normalize();
+    const camUp = new THREE.Vector3().crossVectors(camRight, camDir).normalize();
+
+    // 3 Dynamic Flight Trajectory Archetypes
+    // Pattern 0: Swoop in from dark distance ahead, buzz right past the camera lens (head-on)
+    // Pattern 1: Dart from behind/side of camera, cross view into the night sky ahead
+    // Pattern 2: Diagonal cross-screen dive
+    const pattern = Math.floor(Math.random() * 3);
+
+    let baseP0, baseP1, baseP2;
+
+    if (pattern === 0) {
+        // Head-on swoop towards and right past camera lens
+        baseP0 = camPos.clone().addScaledVector(camDir, 80).addScaledVector(camUp, 12);
+        baseP1 = camPos.clone().addScaledVector(camDir, 11).addScaledVector(camUp, 1.2);
+        baseP2 = camPos.clone().addScaledVector(camDir, -45).addScaledVector(camUp, -5);
+    } else if (pattern === 1) {
+        // Overtake from behind/side and rush ahead across view
+        baseP0 = camPos.clone().addScaledVector(camDir, -35).addScaledVector(camUp, 5);
+        baseP1 = camPos.clone().addScaledVector(camDir, 12).addScaledVector(camUp, 2.5);
+        baseP2 = camPos.clone().addScaledVector(camDir, 95).addScaledVector(camUp, 18);
+    } else {
+        // Cross-screen oblique swoop
+        const side = Math.random() < 0.5 ? 1 : -1;
+        baseP0 = camPos.clone().addScaledVector(camDir, 50).addScaledVector(camRight, side * 45).addScaledVector(camUp, 14);
+        baseP1 = camPos.clone().addScaledVector(camDir, 11).addScaledVector(camRight, -side * 4).addScaledVector(camUp, 1);
+        baseP2 = camPos.clone().addScaledVector(camDir, -30).addScaledVector(camRight, -side * 40).addScaledVector(camUp, -6);
+    }
+
+    for (let i = 0; i < count; i++) {
+        const rawBat = cloneBatModel(MonsterModelManager.batTemplate);
+
+        // Orient raw bat inside wrapper so its forward motion matches pivot lookAt
+        const batWrapper = new THREE.Group();
+        rawBat.rotation.y = Math.PI; // Face head forward
+        batWrapper.add(rawBat);
+
+        // Generous scale (0.70 to 1.15 -> ~4.7m to ~7.8m wingspan for vivid visibility)
+        const scale = 0.70 + Math.random() * 0.45;
+        batWrapper.scale.setScalar(scale);
+
+        // Ensure materials are solid and visible with depthWrite intact
+        const batMaterials = [];
+        rawBat.traverse(c => {
+            if (c.isMesh && c.material) {
+                c.material = c.material.clone();
+                c.material.transparent = true;
+                c.material.opacity = 1.0;
+                c.material.depthWrite = true;
+                batMaterials.push(c.material);
+            }
+        });
+
+        // Setup AnimationMixer for flapping wings
+        let mixer = null;
+        if (MonsterModelManager.batAnimationClip) {
+            mixer = new THREE.AnimationMixer(rawBat);
+            const action = mixer.clipAction(MonsterModelManager.batAnimationClip);
+            action.timeScale = 1.15 + Math.random() * 0.5; // Fast flapping wings
+            action.play();
+        }
+
+        // Individualized trajectory control points with flock spread
+        const p0 = baseP0.clone()
+            .addScaledVector(camRight, (Math.random() - 0.5) * 16)
+            .addScaledVector(camUp, (Math.random() - 0.5) * 6);
+
+        const p1 = baseP1.clone()
+            .addScaledVector(camRight, (Math.random() - 0.5) * 8)
+            .addScaledVector(camUp, (Math.random() - 0.5) * 4);
+
+        const p2 = baseP2.clone()
+            .addScaledVector(camRight, (Math.random() - 0.5) * 22)
+            .addScaledVector(camUp, (Math.random() - 0.5) * 10);
+
+        batWrapper.position.copy(p0);
+        batWrapper.visible = false;
+        batsGroup.add(batWrapper);
+
+        activeBats.push({
+            group: batWrapper,
+            materials: batMaterials,
+            mixer: mixer,
+            p0: p0,
+            p1: p1,
+            p2: p2,
+            delay: i * (0.08 + Math.random() * 0.12), // Quick succession flock launch
+            elapsed: 0,
+            duration: 2.4 + Math.random() * 0.8, // 2.4s - 3.2s flight duration
+            seed: Math.random() * 20
+        });
+    }
+}
+
+function updateAmbientBats(delta, time) {
+    if (!MonsterModelManager.batTemplate) return;
+
+    // Schedule swarms every 10 to 18 seconds
+    if (time >= nextBatFlightTime) {
+        nextBatFlightTime = time + 10 + Math.random() * 8;
+        spawnBatSwarm(time);
+    }
+
+    if (activeBats.length === 0) return;
+
+    for (let i = activeBats.length - 1; i >= 0; i--) {
+        const bat = activeBats[i];
+
+        if (bat.delay > 0) {
+            bat.delay -= delta;
+            continue;
+        }
+
+        bat.group.visible = true;
+        bat.elapsed += delta;
+
+        if (bat.mixer) {
+            bat.mixer.update(delta);
+        }
+
+        const t = Math.min(1.0, bat.elapsed / bat.duration);
+
+        // Quadratic Bezier interpolation
+        const oneMinusT = 1.0 - t;
+        const b0 = oneMinusT * oneMinusT;
+        const b1 = 2.0 * oneMinusT * t;
+        const b2 = t * t;
+
+        const posX = b0 * bat.p0.x + b1 * bat.p1.x + b2 * bat.p2.x;
+        const posY = b0 * bat.p0.y + b1 * bat.p1.y + b2 * bat.p2.y;
+        const posZ = b0 * bat.p0.z + b1 * bat.p1.z + b2 * bat.p2.z;
+
+        // High-frequency fluttering & organic weaving
+        const flutter = Math.sin(bat.elapsed * 16 + bat.seed) * 1.0;
+        const sway = Math.cos(bat.elapsed * 13 + bat.seed) * 0.8;
+
+        bat.group.position.set(posX, posY + flutter, posZ + sway);
+
+        // Orient along tangent velocity vector
+        const nextT = Math.min(1.0, t + 0.04);
+        const nextOneMinusT = 1.0 - nextT;
+        const nb0 = nextOneMinusT * nextOneMinusT;
+        const nb1 = 2.0 * nextOneMinusT * nextT;
+        const nb2 = nextT * nextT;
+        const nextPos = new THREE.Vector3(
+            nb0 * bat.p0.x + nb1 * bat.p1.x + nb2 * bat.p2.x,
+            nb0 * bat.p0.y + nb1 * bat.p1.y + nb2 * bat.p2.y + Math.sin((bat.elapsed + 0.04) * 16 + bat.seed) * 1.0,
+            nb0 * bat.p0.z + nb1 * bat.p1.z + nb2 * bat.p2.z + Math.cos((bat.elapsed + 0.04) * 13 + bat.seed) * 0.8
+        );
+
+        bat.group.lookAt(nextPos);
+        bat.group.rotation.z += sway * 0.28; // Dynamic banking roll
+
+        // Fade in rapidly upon launch and fade out at far exit
+        let opacity = 1.0;
+        if (t < 0.10) {
+            opacity = t / 0.10;
+        } else if (t > 0.85) {
+            opacity = (1.0 - t) / 0.15;
+        }
+
+        for (let m = 0; m < bat.materials.length; m++) {
+            bat.materials[m].opacity = opacity;
+        }
+
+        // Cleanup on flight completion
+        if (t >= 1.0) {
+            batsGroup.remove(bat.group);
+            if (bat.mixer) bat.mixer.stopAllAction();
+            for (let m = 0; m < bat.materials.length; m++) {
+                bat.materials[m].dispose();
+            }
+            activeBats.splice(i, 1);
+        }
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.spawnBats = () => spawnBatSwarm(clock.getElapsedTime());
+}
+
 const jackLanternMaterials = [];
 
 // Track Siding Layout Parameters (used for siding placement and tree exclusion)
@@ -1437,6 +1663,8 @@ const MonsterModelManager = {
     jackTemplate: null,
     slimeTemplate: null,
     leafTemplate: null,
+    batTemplate: null,
+    batAnimationClip: null,
     ready: false,
 
     preloadAll() {
@@ -1449,7 +1677,7 @@ const MonsterModelManager = {
         if (startBtn) { startBtn.disabled = true; startBtn.style.cursor = 'not-allowed'; }
 
         let loadedCount = 0;
-        const totalItems = 14;
+        const totalItems = 15;
 
         const updateLoadingProgress = () => {
             loadedCount++;
@@ -1789,7 +2017,43 @@ const MonsterModelManager = {
             );
         });
 
-        // 8. Preload Creepster font so countdown numbers render immediately in Creepster font
+        // 8. Preload Environment bat.glb (Ambient spooky flying bats)
+        // Attribution: "Animated Halloween Bat" (https://skfb.ly/oMMrS) by uosew is licensed under CC BY 4.0
+        const batPromise = new Promise((resolve) => {
+            loader.load(
+                'models/bat.glb',
+                (gltf) => {
+                    const batRoot = gltf.scene;
+
+                    batRoot.traverse((c) => {
+                        if (c.isMesh) {
+                            c.castShadow = true;
+                            c.receiveShadow = false;
+                            if (c.material) {
+                                c.material.roughness = 0.65;
+                                c.material.metalness = 0.1;
+                                c.material.side = THREE.DoubleSide;
+                                c.material.transparent = true;
+                            }
+                        }
+                    });
+
+                    this.batTemplate = batRoot;
+                    this.batAnimationClip = (gltf.animations && gltf.animations.length > 0) ? gltf.animations[0] : null;
+
+                    updateLoadingProgress();
+                    resolve();
+                },
+                undefined,
+                (err) => {
+                    console.warn('[MonsterModelManager] Failed to load models/bat.glb:', err);
+                    updateLoadingProgress();
+                    resolve();
+                }
+            );
+        });
+
+        // 9. Preload Creepster font so countdown numbers render immediately in Creepster font
         const fontPromise = (typeof document !== 'undefined' && document.fonts && document.fonts.load)
             ? document.fonts.load("200px 'Creepster'").catch(e => console.warn("Creepster preload warning:", e))
             : Promise.resolve();
@@ -1802,6 +2066,7 @@ const MonsterModelManager = {
             jackPromise,
             slimePromise,
             leafPromise,
+            batPromise,
             fontPromise
         ]).then(() => {
             this.ready = true;
@@ -1816,6 +2081,10 @@ const MonsterModelManager = {
             }
             activateStartButton();
             updateStatusPill();
+            // Trigger first atmospheric bat swarm shortly after game assets are ready
+            setTimeout(() => {
+                spawnBatSwarm(clock.getElapsedTime());
+            }, 800);
         });
     },
 
@@ -2603,6 +2872,9 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     introFlybyActive = true;
     setRaceState(RACE_STATE.INTRO);
 
+    // Dramatic flock of bats swoops past during the flyby
+    spawnBatSwarm(clock.getElapsedTime());
+
     raceAudio.init();
 
     // Engine rev repeats while camera is panning racers at the start
@@ -3069,6 +3341,7 @@ function animate() {
     }
     updateHazardAnimations(delta, time);
     updateFireworks();
+    updateAmbientBats(deltaReal, time);
 
     // Update all racers according to the active raceState
     for (let i = 0; i < racers.length; i++) {
@@ -3149,6 +3422,7 @@ function animate() {
             sfxWinner.play().catch(e => console.warn(e));
 
             startFireworks(racers[0].color);
+            spawnBatSwarm(time);
         }
 
         if (firstFinishTriggered && (allFinished || (time - winnerFinishTime >= 2.0)) && raceState !== RACE_STATE.FINISHED) {

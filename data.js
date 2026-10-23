@@ -39,6 +39,13 @@ const APP_INFO = {
             author: "Twisty_z",
             license: "Creative Commons Attribution",
             licenseUrl: "http://creativecommons.org/licenses/by/4.0/"
+        },
+        {
+            title: "Animated Halloween Bat",
+            url: "https://skfb.ly/oMMrS",
+            author: "uosew",
+            license: "Creative Commons Attribution",
+            licenseUrl: "http://creativecommons.org/licenses/by/4.0/"
         }
     ],
     copyright: `© ${new Date().getFullYear()} Shaun Daubney. All rights reserved.`

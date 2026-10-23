@@ -582,7 +582,11 @@ function createRoadTexture() {
     const tex = new THREE.CanvasTexture(cvs);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(1, 133);
+    tex.repeat.set(1, 1);
+    tex.encoding = THREE.sRGBEncoding;
+    if (renderer && renderer.capabilities) {
+        tex.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+    }
     return tex;
 }
 
@@ -600,6 +604,11 @@ function createCryptStoneTexture() {
     const tex = new THREE.CanvasTexture(cvs);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1, 1);
+    tex.encoding = THREE.sRGBEncoding;
+    if (renderer && renderer.capabilities) {
+        tex.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+    }
     return tex;
 }
 
@@ -733,8 +742,8 @@ function createWastelandGrassTexture() {
     const tex = new THREE.CanvasTexture(cvs);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    // Verge is 1400m wide and 9000m long: 20m x 20m per tile gives isotropic 1:1 square ratio
-    tex.repeat.set(70, 450);
+    // Verge is 1200m wide and 9000m long: UV mapping handles 20m x 20m per repeat isotropically
+    tex.repeat.set(1, 1);
     tex.encoding = THREE.sRGBEncoding;
     if (renderer && renderer.capabilities) {
         tex.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
@@ -752,53 +761,322 @@ const grassTex = createWastelandGrassTexture();
 const landscapeGroup = new THREE.Group();
 scene.add(landscapeGroup);
 
-// 1. Haunted Road, Kerbs & Verges (Extended symmetrically so both start line and finish line look into deep fog)
-const roadLength = CONFIG.raceDistance + 4800; // 4200 + 4800 = 9000m (extends 2400m before start and 2400m after finish)
-const roadGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, roadLength);
+// Sub-groups for dynamic track surface and sidings (rebuilt when track curvature changes)
+const trackSurfaceGroup = new THREE.Group();
+landscapeGroup.add(trackSurfaceGroup);
+
+const sidingsGroup = new THREE.Group();
+landscapeGroup.add(sidingsGroup);
+
+// ----------------------------------------------------
+// TRACK CURVATURE PROFILES
+// ----------------------------------------------------
+const TRACK_PROFILES = {
+    straight: {
+        id: 'straight',
+        name: 'Dead Straight',
+        getPoint(z) {
+            return {
+                x: 0,
+                y: 0,
+                z: z,
+                dx: 0,
+                d2x: 0,
+                heading: 0,
+                tangent: new THREE.Vector3(0, 0, 1),
+                right: new THREE.Vector3(1, 0, 0),
+                normal: new THREE.Vector3(-1, 0, 0),
+                curvature: 0
+            };
+        }
+    },
+    s_curves: {
+        id: 's_curves',
+        name: 'The Haunted Highway S-Curves',
+        // Analytic smooth composite curve:
+        // Straight grid for z < 180m, sweeps into wide S-curves and chicanes,
+        // and straightens out cleanly into the finish line (z > 4080m)
+        getPoint(z) {
+            let env = 1.0;
+            let dEnv = 0.0;
+            if (z < 180) {
+                env = 0.0;
+                dEnv = 0.0;
+            } else if (z < 520) {
+                const u = (z - 180) / (520 - 180);
+                env = u * u * (3.0 - 2.0 * u);
+                dEnv = (6.0 * u - 6.0 * u * u) / 340.0;
+            } else if (z > 3750) {
+                if (z > 4080) {
+                    env = 0.0;
+                    dEnv = 0.0;
+                } else {
+                    const u = (4080 - z) / (4080 - 3750);
+                    env = u * u * (3.0 - 2.0 * u);
+                    dEnv = -(6.0 * u - 6.0 * u * u) / 330.0;
+                }
+            }
+
+            // Wave 1: Long sweeping bend (amplitude 42m, wavelength 1600m)
+            const k1 = (Math.PI * 2) / 1600.0;
+            const w1 = Math.sin((z - 200) * k1);
+            const dw1 = k1 * Math.cos((z - 200) * k1);
+            const d2w1 = -k1 * k1 * w1;
+
+            // Wave 2: Fast rhythmic chicane (amplitude 18m, wavelength 800m)
+            const k2 = (Math.PI * 2) / 800.0;
+            const w2 = Math.sin((z - 200) * k2 + 0.5);
+            const dw2 = k2 * Math.cos((z - 200) * k2 + 0.5);
+            const d2w2 = -k2 * k2 * w2;
+
+            const rawX = 42.0 * w1 + 18.0 * w2;
+            const rawDx = 42.0 * dw1 + 18.0 * dw2;
+            const rawD2x = 42.0 * d2w1 + 18.0 * d2w2;
+
+            const x = env * rawX;
+            const dx = dEnv * rawX + env * rawDx;
+            const d2x = env * rawD2x;
+
+            const heading = Math.atan2(dx, 1.0);
+            const norm = Math.hypot(dx, 1.0);
+            const tx = dx / norm;
+            const tz = 1.0 / norm;
+
+            // Track right vector = tangent rotated 90° clockwise in XZ plane: (tx, tz) -> (tz, -tx)
+            const rx = tz;
+            const rz = -tx;
+
+            return {
+                x: x,
+                y: 0,
+                z: z,
+                dx: dx,
+                d2x: d2x,
+                heading: heading,
+                tangent: new THREE.Vector3(tx, 0, tz),
+                right: new THREE.Vector3(rx, 0, rz),
+                normal: new THREE.Vector3(-rx, 0, -rz),
+                curvature: d2x
+            };
+        }
+    }
+};
+
+let activeTrackProfile = TRACK_PROFILES.s_curves;
+
+function getActiveTrackPoint(z) {
+    return activeTrackProfile.getPoint(z);
+}
+
+// 1. Haunted Road, Kerbs & Verges Materials
 const roadMat = new THREE.MeshStandardMaterial({
     map: roadTex,
     roughness: 0.82,
-    metalness: 0.05
+    metalness: 0.05,
+    side: THREE.DoubleSide
 });
-const roadMesh = new THREE.Mesh(roadGeo, roadMat);
-roadMesh.rotation.x = -Math.PI / 2;
-roadMesh.position.set(0, 0, CONFIG.raceDistance / 2);
-roadMesh.receiveShadow = true;
-landscapeGroup.add(roadMesh);
-
-// 2. Raised Stone Kerbs & Haunted Verges
-const kerbGeo = new THREE.BoxGeometry(2.5, 0.9, roadLength);
-const kerbMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x706687, roughness: 0.85 });
-
-const roadHalf = CONFIG.roadWidth / 2;
-
-const leftKerb = new THREE.Mesh(kerbGeo, kerbMat);
-leftKerb.position.set(-roadHalf - 1.25, 0.45, CONFIG.raceDistance / 2);
-leftKerb.receiveShadow = true;
-landscapeGroup.add(leftKerb);
-
-const rightKerb = new THREE.Mesh(kerbGeo, kerbMat);
-rightKerb.position.set(roadHalf + 1.25, 0.45, CONFIG.raceDistance / 2);
-rightKerb.receiveShadow = true;
-landscapeGroup.add(rightKerb);
-
-const vergeWidth = 1400;
-const vergeGeo = new THREE.BoxGeometry(vergeWidth, 20, roadLength);
+const kerbMat = new THREE.MeshStandardMaterial({
+    map: stoneTex,
+    color: 0x706687,
+    roughness: 0.85,
+    side: THREE.DoubleSide
+});
 const vergeMat = new THREE.MeshStandardMaterial({
     map: grassTex,
     roughness: 0.88,
-    metalness: 0.05
+    metalness: 0.05,
+    side: THREE.DoubleSide
 });
 
-const leftVerge = new THREE.Mesh(vergeGeo, vergeMat);
-leftVerge.position.set(-roadHalf - 2.5 - (vergeWidth / 2), -9.8, CONFIG.raceDistance / 2);
-leftVerge.receiveShadow = true;
-landscapeGroup.add(leftVerge);
+/**
+ * Builds the ribbon BufferGeometry for Road, Kerbs, and Verges along activeTrackProfile.
+ * Segmented every 12m from -2400m to +6600m (total 9000m extended raceway).
+ */
+function buildTrackSurface() {
+    trackSurfaceGroup.clear();
 
-const rightVerge = new THREE.Mesh(vergeGeo, vergeMat);
-rightVerge.position.set(roadHalf + 2.5 + (vergeWidth / 2), -9.8, CONFIG.raceDistance / 2);
-rightVerge.receiveShadow = true;
-landscapeGroup.add(rightVerge);
+    const minZ = -2400;
+    const maxZ = CONFIG.raceDistance + 2400;
+    const stepZ = 12;
+    const count = Math.ceil((maxZ - minZ) / stepZ) + 1;
+    const halfW = CONFIG.roadWidth / 2;
+    const kerbW = 2.5;
+    const kerbH = 0.9;
+    const vergeW = 1200;
+
+    // Road buffers (2 verts per step)
+    const roadPos = new Float32Array(count * 2 * 3);
+    const roadUv = new Float32Array(count * 2 * 2);
+    const roadIdx = [];
+
+    // Left Kerb buffers (4 verts per step: inner bottom, inner top, outer top, outer bottom)
+    const lKerbPos = new Float32Array(count * 4 * 3);
+    const lKerbUv = new Float32Array(count * 4 * 2);
+    const lKerbIdx = [];
+
+    // Right Kerb buffers (4 verts per step)
+    const rKerbPos = new Float32Array(count * 4 * 3);
+    const rKerbUv = new Float32Array(count * 4 * 2);
+    const rKerbIdx = [];
+
+    // Left Verge buffers (2 verts per step)
+    const lVergePos = new Float32Array(count * 2 * 3);
+    const lVergeUv = new Float32Array(count * 2 * 2);
+    const lVergeIdx = [];
+
+    // Right Verge buffers (2 verts per step)
+    const rVergePos = new Float32Array(count * 2 * 3);
+    const rVergeUv = new Float32Array(count * 2 * 2);
+    const rVergeIdx = [];
+
+    const vergeRepeats = vergeW / 20.0; // 1200 / 20 = 60 repeats across verge width
+
+    for (let i = 0; i < count; i++) {
+        const z = Math.min(maxZ, minZ + i * stepZ);
+        const pt = getActiveTrackPoint(z);
+        const rx = pt.right.x;
+        const rz = pt.right.z;
+
+        const vRoad = i * 2;
+        const vKerb = i * 4;
+        const vVerge = i * 2;
+
+        const roadVCoord = z / 67.67;
+        const stoneVCoord = z / 12.0;
+        const grassVCoord = z / 20.0;
+
+        // Cross-track positions
+        const lrX = pt.x - halfW * rx, lrZ = pt.z - halfW * rz;
+        const rrX = pt.x + halfW * rx, rrZ = pt.z + halfW * rz;
+
+        const lkX = pt.x - (halfW + kerbW) * rx, lkZ = pt.z - (halfW + kerbW) * rz;
+        const rkX = pt.x + (halfW + kerbW) * rx, rkZ = pt.z + (halfW + kerbW) * rz;
+
+        const lvX = pt.x - (halfW + kerbW + vergeW) * rx, lvZ = pt.z - (halfW + kerbW + vergeW) * rz;
+        const rvX = pt.x + (halfW + kerbW + vergeW) * rx, rvZ = pt.z + (halfW + kerbW + vergeW) * rz;
+
+        // --- ROAD ---
+        roadPos[vRoad * 3]     = lrX; roadPos[vRoad * 3 + 1] = 0.0; roadPos[vRoad * 3 + 2] = lrZ;
+        roadUv[vRoad * 2]      = 0.0; roadUv[vRoad * 2 + 1] = roadVCoord;
+
+        roadPos[(vRoad + 1) * 3]     = rrX; roadPos[(vRoad + 1) * 3 + 1] = 0.0; roadPos[(vRoad + 1) * 3 + 2] = rrZ;
+        roadUv[(vRoad + 1) * 2]      = 1.0; roadUv[(vRoad + 1) * 2 + 1] = roadVCoord;
+
+        // --- LEFT KERB ---
+        lKerbPos[vKerb * 3]     = lrX; lKerbPos[vKerb * 3 + 1] = 0.0; lKerbPos[vKerb * 3 + 2] = lrZ;
+        lKerbUv[vKerb * 2]      = 0.0; lKerbUv[vKerb * 2 + 1] = stoneVCoord;
+        lKerbPos[(vKerb + 1) * 3]     = lrX; lKerbPos[(vKerb + 1) * 3 + 1] = kerbH; lKerbPos[(vKerb + 1) * 3 + 2] = lrZ;
+        lKerbUv[(vKerb + 1) * 2]      = 0.25; lKerbUv[(vKerb + 1) * 2 + 1] = stoneVCoord;
+        lKerbPos[(vKerb + 2) * 3]     = lkX; lKerbPos[(vKerb + 2) * 3 + 1] = kerbH; lKerbPos[(vKerb + 2) * 3 + 2] = lkZ;
+        lKerbUv[(vKerb + 2) * 2]      = 0.75; lKerbUv[(vKerb + 2) * 2 + 1] = stoneVCoord;
+        lKerbPos[(vKerb + 3) * 3]     = lkX; lKerbPos[(vKerb + 3) * 3 + 1] = 0.0; lKerbPos[(vKerb + 3) * 3 + 2] = lkZ;
+        lKerbUv[(vKerb + 3) * 2]      = 1.0; lKerbUv[(vKerb + 3) * 2 + 1] = stoneVCoord;
+
+        // --- RIGHT KERB ---
+        rKerbPos[vKerb * 3]     = rrX; rKerbPos[vKerb * 3 + 1] = 0.0; rKerbPos[vKerb * 3 + 2] = rrZ;
+        rKerbUv[vKerb * 2]      = 0.0; rKerbUv[vKerb * 2 + 1] = stoneVCoord;
+        rKerbPos[(vKerb + 1) * 3]     = rrX; rKerbPos[(vKerb + 1) * 3 + 1] = kerbH; rKerbPos[(vKerb + 1) * 3 + 2] = rrZ;
+        rKerbUv[(vKerb + 1) * 2]      = 0.25; rKerbUv[(vKerb + 1) * 2 + 1] = stoneVCoord;
+        rKerbPos[(vKerb + 2) * 3]     = rkX; rKerbPos[(vKerb + 2) * 3 + 1] = kerbH; rKerbPos[(vKerb + 2) * 3 + 2] = rkZ;
+        rKerbUv[(vKerb + 2) * 2]      = 0.75; rKerbUv[(vKerb + 2) * 2 + 1] = stoneVCoord;
+        rKerbPos[(vKerb + 3) * 3]     = rkX; rKerbPos[(vKerb + 3) * 3 + 1] = 0.0; rKerbPos[(vKerb + 3) * 3 + 2] = rkZ;
+        rKerbUv[(vKerb + 3) * 2]      = 1.0; rKerbUv[(vKerb + 3) * 2 + 1] = stoneVCoord;
+
+        // --- LEFT VERGE ---
+        lVergePos[vVerge * 3]     = lkX; lVergePos[vVerge * 3 + 1] = -0.05; lVergePos[vVerge * 3 + 2] = lkZ;
+        lVergeUv[vVerge * 2]      = 0.0; lVergeUv[vVerge * 2 + 1] = grassVCoord;
+
+        lVergePos[(vVerge + 1) * 3]     = lvX; lVergePos[(vVerge + 1) * 3 + 1] = -0.05; lVergePos[(vVerge + 1) * 3 + 2] = lvZ;
+        lVergeUv[(vVerge + 1) * 2]      = -vergeRepeats; lVergeUv[(vVerge + 1) * 2 + 1] = grassVCoord;
+
+        // --- RIGHT VERGE ---
+        rVergePos[vVerge * 3]     = rkX; rVergePos[vVerge * 3 + 1] = -0.05; rVergePos[vVerge * 3 + 2] = rkZ;
+        rVergeUv[vVerge * 2]      = 0.0; rVergeUv[vVerge * 2 + 1] = grassVCoord;
+
+        rVergePos[(vVerge + 1) * 3]     = rvX; rVergePos[(vVerge + 1) * 3 + 1] = -0.05; rVergePos[(vVerge + 1) * 3 + 2] = rvZ;
+        rVergeUv[(vVerge + 1) * 2]      = vergeRepeats; rVergeUv[(vVerge + 1) * 2 + 1] = grassVCoord;
+
+        if (i < count - 1) {
+            // Road quads (CCW pointing +Y up)
+            const ra = vRoad, rb = vRoad + 2;
+            roadIdx.push(ra, rb, ra + 1);
+            roadIdx.push(ra + 1, rb, rb + 1);
+
+            // Left Kerb quads (3 faces)
+            const la0 = vKerb, la1 = vKerb + 1, la2 = vKerb + 2, la3 = vKerb + 3;
+            const lb0 = vKerb + 4, lb1 = vKerb + 5, lb2 = vKerb + 6, lb3 = vKerb + 7;
+            lKerbIdx.push(la0, la1, lb0); lKerbIdx.push(la1, lb1, lb0);
+            lKerbIdx.push(la2, lb2, la1); lKerbIdx.push(la1, lb2, lb1);
+            lKerbIdx.push(la3, lb3, la2); lKerbIdx.push(la2, lb3, lb2);
+
+            // Right Kerb quads (3 faces)
+            rKerbIdx.push(la0, lb0, la1); rKerbIdx.push(la1, lb0, lb1);
+            rKerbIdx.push(la1, lb1, la2); rKerbIdx.push(la2, lb1, lb2);
+            rKerbIdx.push(la3, la2, lb3); rKerbIdx.push(la2, lb2, lb3);
+
+            // Left Verge quad (CCW pointing +Y up)
+            const lva = vVerge, lvb = vVerge + 2;
+            lVergeIdx.push(lva + 1, lvb + 1, lva);
+            lVergeIdx.push(lva, lvb + 1, lvb);
+
+            // Right Verge quad (CCW pointing +Y up)
+            const rva = vVerge, rvb = vVerge + 2;
+            rVergeIdx.push(rva, rvb, rva + 1);
+            rVergeIdx.push(rva + 1, rvb, rvb + 1);
+        }
+    }
+
+    // Assemble Geometries
+    const roadGeo = new THREE.BufferGeometry();
+    roadGeo.setAttribute('position', new THREE.BufferAttribute(roadPos, 3));
+    roadGeo.setAttribute('uv', new THREE.BufferAttribute(roadUv, 2));
+    roadGeo.setIndex(roadIdx);
+    roadGeo.computeVertexNormals();
+    const roadMesh = new THREE.Mesh(roadGeo, roadMat);
+    roadMesh.receiveShadow = true;
+    trackSurfaceGroup.add(roadMesh);
+
+    const lKerbGeo = new THREE.BufferGeometry();
+    lKerbGeo.setAttribute('position', new THREE.BufferAttribute(lKerbPos, 3));
+    lKerbGeo.setAttribute('uv', new THREE.BufferAttribute(lKerbUv, 2));
+    lKerbGeo.setIndex(lKerbIdx);
+    lKerbGeo.computeVertexNormals();
+    const leftKerb = new THREE.Mesh(lKerbGeo, kerbMat);
+    leftKerb.receiveShadow = true;
+    leftKerb.castShadow = true;
+    trackSurfaceGroup.add(leftKerb);
+
+    const rKerbGeo = new THREE.BufferGeometry();
+    rKerbGeo.setAttribute('position', new THREE.BufferAttribute(rKerbPos, 3));
+    rKerbGeo.setAttribute('uv', new THREE.BufferAttribute(rKerbUv, 2));
+    rKerbGeo.setIndex(rKerbIdx);
+    rKerbGeo.computeVertexNormals();
+    const rightKerb = new THREE.Mesh(rKerbGeo, kerbMat);
+    rightKerb.receiveShadow = true;
+    rightKerb.castShadow = true;
+    trackSurfaceGroup.add(rightKerb);
+
+    const lVergeGeo = new THREE.BufferGeometry();
+    lVergeGeo.setAttribute('position', new THREE.BufferAttribute(lVergePos, 3));
+    lVergeGeo.setAttribute('uv', new THREE.BufferAttribute(lVergeUv, 2));
+    lVergeGeo.setIndex(lVergeIdx);
+    lVergeGeo.computeVertexNormals();
+    const leftVerge = new THREE.Mesh(lVergeGeo, vergeMat);
+    leftVerge.receiveShadow = true;
+    trackSurfaceGroup.add(leftVerge);
+
+    const rVergeGeo = new THREE.BufferGeometry();
+    rVergeGeo.setAttribute('position', new THREE.BufferAttribute(rVergePos, 3));
+    rVergeGeo.setAttribute('uv', new THREE.BufferAttribute(rVergeUv, 2));
+    rVergeGeo.setIndex(rVergeIdx);
+    rVergeGeo.computeVertexNormals();
+    const rightVerge = new THREE.Mesh(rVergeGeo, vergeMat);
+    rightVerge.receiveShadow = true;
+    trackSurfaceGroup.add(rightVerge);
+}
+
+// Build initial track surface along active profile
+buildTrackSurface();
 
 // 3. Full Moon & Starfield (Positioned safely above bird's-eye camera while visible during racing)
 const moonGroup = new THREE.Group();
@@ -919,14 +1197,18 @@ function generateTrackHazards() {
     if (MonsterModelManager.slimeTemplate) {
         for (let i = 0; i < slimeCount; i++) {
             const placement = pickValidPlacement();
-            const x = placement.x;
+            const laneX = placement.x;
             const z = placement.z;
+
+            const pt = getActiveTrackPoint(z);
+            const worldX = pt.x + laneX * pt.right.x;
+            const worldZ = pt.z + laneX * pt.right.z;
 
             const slimeMesh = MonsterModelManager.slimeTemplate.clone(true);
             const scale = 5.2 + Math.random() * 1.2;
             slimeMesh.scale.setScalar(scale);
-            slimeMesh.position.set(x, 0.06, z);
-            slimeMesh.rotation.y = Math.random() * Math.PI * 2;
+            slimeMesh.position.set(worldX, 0.06, worldZ);
+            slimeMesh.rotation.y = pt.heading + Math.random() * Math.PI * 2;
             hazardsGroup.add(slimeMesh);
 
             activeHazards.push({
@@ -934,8 +1216,10 @@ function generateTrackHazards() {
                 id: 'slime_' + i + '_' + Math.random().toString(36).substr(2, 4),
                 mesh: slimeMesh,
                 baseScale: scale,
-                x: x,
+                laneX: laneX,
                 z: z,
+                worldX: worldX,
+                worldZ: worldZ,
                 radius: scale * 0.95,
                 hitRacers: new Set()
             });
@@ -946,11 +1230,16 @@ function generateTrackHazards() {
     if (MonsterModelManager.leafTemplate) {
         for (let i = 0; i < leafCount; i++) {
             const placement = pickValidPlacement();
-            const x = placement.x;
+            const laneX = placement.x;
             const z = placement.z;
 
+            const pt = getActiveTrackPoint(z);
+            const worldX = pt.x + laneX * pt.right.x;
+            const worldZ = pt.z + laneX * pt.right.z;
+
             const pileGroup = new THREE.Group();
-            pileGroup.position.set(x, 0.05, z);
+            pileGroup.position.set(worldX, 0.05, worldZ);
+            pileGroup.rotation.y = pt.heading;
 
             const leafCountInPile = 16 + Math.floor(Math.random() * 8);
             const leaves = [];
@@ -987,8 +1276,10 @@ function generateTrackHazards() {
                 id: 'leaf_' + i + '_' + Math.random().toString(36).substr(2, 4),
                 mesh: pileGroup,
                 leaves: leaves,
-                x: x,
+                laneX: laneX,
                 z: z,
+                worldX: worldX,
+                worldZ: worldZ,
                 radius: 5.5,
                 scattered: false,
                 scatterTime: 0
@@ -1009,14 +1300,14 @@ function checkHazardCollisions(time) {
                 if (racer.finished) continue;
                 if (hazard.hitRacers.has(racer.id)) continue;
 
-                const dx = racer.position.x - hazard.x;
+                const dx = racer.laneX - hazard.laneX;
                 const dz = racer.position.z - hazard.z;
                 const hitDist = hazard.radius + 4.2;
                 if (dx * dx + dz * dz < hitDist * hitDist) {
                     hazard.hitRacers.add(racer.id);
                     racer.applySlowdown(0.70, 8.0);
                     playSlimeSound(time);
-                    spawnFootstepMist(hazard.x, hazard.z, 3.6);
+                    spawnFootstepMist(racer.position.x, racer.mesh.position.z, 3.6);
                 }
             }
         } else if (hazard.type === 'leaf') {
@@ -1026,7 +1317,7 @@ function checkHazardCollisions(time) {
                 const racer = racers[i];
                 if (racer.finished) continue;
 
-                const dx = racer.position.x - hazard.x;
+                const dx = racer.laneX - hazard.laneX;
                 const dz = racer.position.z - hazard.z;
                 const hitDist = hazard.radius + 4.5;
                 if (dx * dx + dz * dz < hitDist * hitDist) {
@@ -1335,7 +1626,7 @@ function buildHauntedForestCorridor(treeTemplates) {
     if (!treeTemplates || treeTemplates.length === 0) return;
 
     // Helper: place trees safely clear of track siding advertising boards (at |x|=95, z=0, 120, 240, ...)
-    function getSidingClearTreeX(isLeft, treeZ) {
+    function getSidingClearTreeOffset(treeZ) {
         let nearSiding = false;
         for (let sz = 0; sz <= CONFIG.raceDistance; sz += SIDING_INTERVAL) {
             if (Math.abs(treeZ - sz) < 50) {
@@ -1345,11 +1636,10 @@ function buildHauntedForestCorridor(treeTemplates) {
         }
         if (nearSiding) {
             // Place tree safely in deep forest behind the siding board (at least 35m behind siding at |x|=95)
-            return isLeft ? (-130 - Math.random() * 85) : (130 + Math.random() * 85);
+            return 130 + Math.random() * 85;
         } else {
             // In open gaps between sidings, trees can grow naturally from verge edge outward
-            const offset = Math.random() * 135;
-            return isLeft ? (-82 - offset) : (82 + offset);
+            return 82 + Math.random() * 135;
         }
     }
 
@@ -1359,8 +1649,13 @@ function buildHauntedForestCorridor(treeTemplates) {
             const tree = template.clone();
             const scale = 11.5 + Math.random() * 8.5;
             const treeZ = z + (Math.random() - 0.5) * 14;
-            const x = getSidingClearTreeX(true, treeZ);
-            tree.position.set(x, 0, treeZ);
+            const pt = getActiveTrackPoint(treeZ);
+            const offset = getSidingClearTreeOffset(treeZ);
+            tree.position.set(
+                pt.x - offset * pt.right.x,
+                0,
+                pt.z - offset * pt.right.z
+            );
             tree.rotation.y = Math.random() * Math.PI * 2;
             tree.scale.set(scale, scale * (0.9 + Math.random() * 0.3), scale);
             forestGroup.add(tree);
@@ -1370,8 +1665,13 @@ function buildHauntedForestCorridor(treeTemplates) {
             const tree = template.clone();
             const scale = 11.5 + Math.random() * 8.5;
             const treeZ = z + (Math.random() - 0.5) * 14;
-            const x = getSidingClearTreeX(false, treeZ);
-            tree.position.set(x, 0, treeZ);
+            const pt = getActiveTrackPoint(treeZ);
+            const offset = getSidingClearTreeOffset(treeZ);
+            tree.position.set(
+                pt.x + offset * pt.right.x,
+                0,
+                pt.z + offset * pt.right.z
+            );
             tree.rotation.y = Math.random() * Math.PI * 2;
             tree.scale.set(scale, scale * (0.9 + Math.random() * 0.3), scale);
             forestGroup.add(tree);
@@ -1389,18 +1689,30 @@ function buildTracksideGraves(graveRoot) {
         if (Math.random() > 0.20) {
             const clone = graveRoot.clone(true);
             const scale = 2.6 + Math.random() * 1.2;
-            const x = -64 - Math.random() * 18;
-            clone.position.set(x, -graveMinY * scale, z + (Math.random() - 0.5) * 12);
-            clone.rotation.set((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.2);
+            const gz = z + (Math.random() - 0.5) * 12;
+            const pt = getActiveTrackPoint(gz);
+            const offset = 64 + Math.random() * 18;
+            clone.position.set(
+                pt.x - offset * pt.right.x,
+                -graveMinY * scale,
+                pt.z - offset * pt.right.z
+            );
+            clone.rotation.set((Math.random() - 0.5) * 0.2, pt.heading + (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.2);
             clone.scale.setScalar(scale);
             gravesGroup.add(clone);
         }
         if (Math.random() > 0.20) {
             const clone = graveRoot.clone(true);
             const scale = 2.6 + Math.random() * 1.2;
-            const x = 64 + Math.random() * 18;
-            clone.position.set(x, -graveMinY * scale, z + (Math.random() - 0.5) * 12);
-            clone.rotation.set((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.2);
+            const gz = z + (Math.random() - 0.5) * 12;
+            const pt = getActiveTrackPoint(gz);
+            const offset = 64 + Math.random() * 18;
+            clone.position.set(
+                pt.x + offset * pt.right.x,
+                -graveMinY * scale,
+                pt.z + offset * pt.right.z
+            );
+            clone.rotation.set((Math.random() - 0.5) * 0.2, pt.heading + (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.2);
             clone.scale.setScalar(scale);
             gravesGroup.add(clone);
         }
@@ -1416,9 +1728,15 @@ function buildTracksideRocks(rockTemplates) {
             const template = rockTemplates[Math.floor(Math.random() * rockTemplates.length)];
             const rock = template.clone();
             const scale = 2.6 + Math.random() * 2.0;
-            const x = -63.5 - Math.random() * 22;
-            rock.position.set(x, 0, z + (Math.random() - 0.5) * 14);
-            rock.rotation.set((Math.random() - 0.5) * 0.3, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.3);
+            const rz = z + (Math.random() - 0.5) * 14;
+            const pt = getActiveTrackPoint(rz);
+            const offset = 63.5 + Math.random() * 22;
+            rock.position.set(
+                pt.x - offset * pt.right.x,
+                0,
+                pt.z - offset * pt.right.z
+            );
+            rock.rotation.set((Math.random() - 0.5) * 0.3, pt.heading + Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.3);
             rock.scale.set(scale, scale * (0.8 + Math.random() * 0.4), scale);
             rocksGroup.add(rock);
         }
@@ -1426,9 +1744,15 @@ function buildTracksideRocks(rockTemplates) {
             const template = rockTemplates[Math.floor(Math.random() * rockTemplates.length)];
             const rock = template.clone();
             const scale = 2.6 + Math.random() * 2.0;
-            const x = 63.5 + Math.random() * 22;
-            rock.position.set(x, 0, z + (Math.random() - 0.5) * 14);
-            rock.rotation.set((Math.random() - 0.5) * 0.3, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.3);
+            const rz = z + (Math.random() - 0.5) * 14;
+            const pt = getActiveTrackPoint(rz);
+            const offset = 63.5 + Math.random() * 22;
+            rock.position.set(
+                pt.x + offset * pt.right.x,
+                0,
+                pt.z + offset * pt.right.z
+            );
+            rock.rotation.set((Math.random() - 0.5) * 0.3, pt.heading + Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.3);
             rock.scale.set(scale, scale * (0.8 + Math.random() * 0.4), scale);
             rocksGroup.add(rock);
         }
@@ -1477,13 +1801,35 @@ function createTrackSiding(imagePath, x, z, side) {
     return group;
 }
 
-const sidingInterval = SIDING_INTERVAL;
-for (let z = 0; z <= CONFIG.raceDistance; z += sidingInterval) {
-    const img1 = adImages[Math.floor(Math.random() * adImages.length)];
-    landscapeGroup.add(createTrackSiding(img1, -SIDING_POS_X, z, -1));
-    const img2 = adImages[Math.floor(Math.random() * adImages.length)];
-    landscapeGroup.add(createTrackSiding(img2, SIDING_POS_X, z, 1));
+function buildTrackSidings() {
+    sidingsGroup.clear();
+    const sidingInterval = SIDING_INTERVAL;
+    for (let z = 0; z <= CONFIG.raceDistance; z += sidingInterval) {
+        const pt = getActiveTrackPoint(z);
+        const img1 = adImages[Math.floor(Math.random() * adImages.length)];
+        const s1 = createTrackSiding(img1, 0, 0, -1);
+        s1.position.set(
+            pt.x - SIDING_POS_X * pt.right.x,
+            1.2,
+            pt.z - SIDING_POS_X * pt.right.z
+        );
+        s1.rotation.y = pt.heading;
+        sidingsGroup.add(s1);
+
+        const img2 = adImages[Math.floor(Math.random() * adImages.length)];
+        const s2 = createTrackSiding(img2, 0, 0, 1);
+        s2.position.set(
+            pt.x + SIDING_POS_X * pt.right.x,
+            1.2,
+            pt.z + SIDING_POS_X * pt.right.z
+        );
+        s2.rotation.y = pt.heading;
+        sidingsGroup.add(s2);
+    }
 }
+
+// Build initial sidings along active track profile
+buildTrackSidings();
 
 // 7. Roadside Jack-o'-Lanterns (Scattered on sides every now and then, deduplicated materials)
 function buildRoadsideProps(jackTemplate) {
@@ -1495,9 +1841,15 @@ function buildRoadsideProps(jackTemplate) {
         if (Math.random() > 0.30) {
             const clone = jackTemplate.clone(true);
             const scale = 5.6 * (0.88 + Math.random() * 0.28);
-            const x = -68.0 - Math.random() * 4.0;
-            clone.position.set(x, 0, z + (Math.random() - 0.5) * 10);
-            clone.rotation.y = (Math.PI / 2) + (Math.random() - 0.5) * 0.7;
+            const offset = 68.0 + Math.random() * 4.0;
+            const jz = z + (Math.random() - 0.5) * 10;
+            const jPt = getActiveTrackPoint(jz);
+            clone.position.set(
+                jPt.x - offset * jPt.right.x,
+                0,
+                jPt.z - offset * jPt.right.z
+            );
+            clone.rotation.y = jPt.heading + (Math.PI / 2) + (Math.random() - 0.5) * 0.7;
             clone.scale.setScalar(scale);
             clone.traverse(c => {
                 if (c.isMesh && c.material?.emissive && (c.material.emissive.r > 0 || c.material.emissive.g > 0)) {
@@ -1511,9 +1863,15 @@ function buildRoadsideProps(jackTemplate) {
         if (Math.random() > 0.30) {
             const clone = jackTemplate.clone(true);
             const scale = 5.6 * (0.88 + Math.random() * 0.28);
-            const x = 68.0 + Math.random() * 4.0;
-            clone.position.set(x, 0, z + (Math.random() - 0.5) * 10);
-            clone.rotation.y = (-Math.PI / 2) + (Math.random() - 0.5) * 0.7;
+            const offset = 68.0 + Math.random() * 4.0;
+            const jz = z + (Math.random() - 0.5) * 10;
+            const jPt = getActiveTrackPoint(jz);
+            clone.position.set(
+                jPt.x + offset * jPt.right.x,
+                0,
+                jPt.z + offset * jPt.right.z
+            );
+            clone.rotation.y = jPt.heading - (Math.PI / 2) + (Math.random() - 0.5) * 0.7;
             clone.scale.setScalar(scale);
             clone.traverse(c => {
                 if (c.isMesh && c.material?.emissive && (c.material.emissive.r > 0 || c.material.emissive.g > 0)) {
@@ -1524,6 +1882,37 @@ function buildRoadsideProps(jackTemplate) {
             });
             propsGroup.add(clone);
         }
+    }
+}
+
+/**
+ * Full track landscape rebuilder called when track curvature changes or assets finish preloading.
+ */
+function rebuildTrackLandscape() {
+    buildTrackSurface();
+    buildTrackSidings();
+    if (MonsterModelManager.ready) {
+        buildHauntedForestCorridor(MonsterModelManager.treeTemplates);
+        buildTracksideGraves(MonsterModelManager.graveRoot);
+        buildTracksideRocks(MonsterModelManager.rockTemplates);
+        buildRoadsideProps(MonsterModelManager.jackTemplate);
+    }
+    const fPt = getActiveTrackPoint(CONFIG.raceDistance);
+    if (typeof finishGroup !== 'undefined' && finishGroup) {
+        finishGroup.position.set(fPt.x, 0, fPt.z);
+        finishGroup.rotation.y = fPt.heading;
+    }
+    generateTrackHazards();
+}
+
+function updateTrackForCurrentRace() {
+    const raceConfig = storedRaces[currentRaceIndex] || (typeof DEFAULT_RACES !== 'undefined' ? DEFAULT_RACES[0] : null);
+    const profileKey = (raceConfig && raceConfig.trackCurve && TRACK_PROFILES[raceConfig.trackCurve])
+        ? raceConfig.trackCurve
+        : 's_curves';
+    if (activeTrackProfile.id !== profileKey) {
+        activeTrackProfile = TRACK_PROFILES[profileKey];
+        rebuildTrackLandscape();
     }
 }
 
@@ -1550,18 +1939,15 @@ const fBanner = new THREE.Mesh(
     new THREE.BoxGeometry(CONFIG.roadWidth + 12, 8.5, 2),
     new THREE.MeshStandardMaterial({ map: checkTex, roughness: 0.6, emissive: 0x160726 })
 );
-fBanner.position.set(0, 24, CONFIG.raceDistance);
+fBanner.position.set(0, 24, 0);
 fBanner.castShadow = true;
 
 const pillarMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x524666, roughness: 0.85 });
 const p1 = new THREE.Mesh(new THREE.BoxGeometry(4.0, 28, 4.0), pillarMat);
-p1.position.set(-archPillarX, 14, CONFIG.raceDistance);
+p1.position.set(-archPillarX, 14, 0);
 p1.castShadow = true;
 const p2 = p1.clone();
-p2.position.set(archPillarX, 14, CONFIG.raceDistance);
-
-finishGroup.add(p1, p2, fBanner);
-scene.add(finishGroup);
+p2.position.set(archPillarX, 14, 0);
 
 // Road Start & Finish Paint Strips
 const lineStripGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, 3.5);
@@ -1571,9 +1957,17 @@ startLineStrip.rotation.x = -Math.PI / 2;
 startLineStrip.position.set(0, 0.04, 0);
 scene.add(startLineStrip);
 
-const finishLineStrip = startLineStrip.clone();
-finishLineStrip.position.set(0, 0.04, CONFIG.raceDistance);
-scene.add(finishLineStrip);
+const finishLineStrip = new THREE.Mesh(lineStripGeo, startLineMat);
+finishLineStrip.rotation.x = -Math.PI / 2;
+finishLineStrip.position.set(0, 0.04, 0);
+
+finishGroup.add(p1, p2, fBanner, finishLineStrip);
+scene.add(finishGroup);
+
+// Position finishGroup along activeTrackProfile
+const initialFPt = getActiveTrackPoint(CONFIG.raceDistance);
+finishGroup.position.set(initialFPt.x, 0, initialFPt.z);
+finishGroup.rotation.y = initialFPt.heading;
 
 /**
  * OBJECT-POOLED FOOTSTEP DUST / ECTO-MIST SYSTEM
@@ -2149,8 +2543,10 @@ class Zoombie {
         this.name = name;
         this.color = COLORS[id % COLORS.length];
         this.startX = startX;
+        this.laneX = startX;
         this.mesh = new THREE.Group();
-        this.position = new THREE.Vector3(startX, 0, 0);
+        const pt = getActiveTrackPoint(0);
+        this.position = new THREE.Vector3(pt.x + this.laneX * pt.right.x, 0, pt.z + this.laneX * pt.right.z);
         this.baseSpeed = CONFIG.raceDistance / CONFIG.targetDuration;
         this.currentSpeed = 0;
         this.finished = false;
@@ -2233,7 +2629,7 @@ class Zoombie {
 
         const side = (nx !== undefined && Math.abs(nx) > 0.01)
             ? Math.sign(nx)
-            : (this.position.x >= otherRacer.position.x ? 1 : -1);
+            : (this.laneX >= otherRacer.laneX ? 1 : -1);
 
         // Dramatic arcade swerve impulses (triggered ONLY on kart collision!)
         this.swerveVelX = side * (13.0 + Math.random() * 6.0);
@@ -2242,8 +2638,8 @@ class Zoombie {
         this.swerveDuration = 0.85;
 
         // Collision mist burst at the point of impact
-        const contactX = (this.position.x + otherRacer.position.x) / 2;
-        const contactZ = (this.position.z + otherRacer.position.z) / 2;
+        const contactX = (this.mesh.position.x + otherRacer.mesh.position.x) / 2;
+        const contactZ = (this.mesh.position.z + otherRacer.mesh.position.z) / 2;
         spawnFootstepMist(contactX, contactZ, 2.4);
         return true;
     }
@@ -2280,7 +2676,9 @@ class Zoombie {
     }
 
     resetToStartLine() {
-        this.position.set(this.startX, 0, 0);
+        this.laneX = this.startX;
+        const pt = getActiveTrackPoint(0);
+        this.position.set(pt.x + this.laneX * pt.right.x, 0, pt.z + this.laneX * pt.right.z);
         this.currentSpeed = 0;
         this.finished = false;
         this.finishTime = 0;
@@ -2300,7 +2698,7 @@ class Zoombie {
         this.slowdownTimer = 0;
         this.slowdownDuration = 8.0;
 
-        this.mesh.position.set(this.startX, 0, 0);
+        this.mesh.position.copy(this.position);
         this.mesh.rotation.set(0, 0, 0);
         this.kartTiltGroup.position.set(0, this.baseKartY, 0);
         this.kartTiltGroup.rotation.set(0, 0, 0);
@@ -2364,8 +2762,10 @@ class Zoombie {
      * Restrained starting line stance: karts planted at Z=0, gentle engine throb.
      */
     updateReadyPose(time) {
-        this.position.set(this.startX, 0, 0);
-        this.mesh.position.set(this.startX, 0, 0);
+        this.laneX = this.startX;
+        const pt = getActiveTrackPoint(0);
+        this.position.set(pt.x + this.laneX * pt.right.x, 0, pt.z + this.laneX * pt.right.z);
+        this.mesh.position.copy(this.position);
         this.mesh.position.y = 0;
         this.mesh.rotation.set(0, 0, 0);
         this.currentSpeed = 0;
@@ -2383,7 +2783,7 @@ class Zoombie {
     }
 
     /**
-     * Arcade kart locomotion & physics: natural lane holding, dramatic swerves only upon collision.
+     * Arcade kart locomotion & physics: natural lane holding along curved track, banking, dynamic swerves.
      */
     updateRacingMovement(delta, time) {
         // Minimum 8-second gradual recovery from hazard slowdown
@@ -2435,16 +2835,16 @@ class Zoombie {
 
         // Natural, organic lane holding along the raceway
         const targetLaneX = this.startX + Math.sin(time * 0.75 + this.id * 1.6) * 1.6;
-        const dx = targetLaneX - this.position.x;
+        const dLane = targetLaneX - this.laneX;
         const maxLateral = this.baseSpeed * 0.15;
-        const lateralSpeed = THREE.MathUtils.clamp(dx * 2.2, -maxLateral, maxLateral);
-        this.position.x += lateralSpeed * delta;
+        const lateralSpeed = THREE.MathUtils.clamp(dLane * 2.2, -maxLateral, maxLateral);
+        this.laneX += lateralSpeed * delta;
 
         // Apply dramatic collision swerve impulse if active
         if (this.swerveDuration > 0) {
             this.swerveDuration -= delta;
-            this.position.x += this.swerveVelX * delta;
-            this.position.x = THREE.MathUtils.clamp(this.position.x, -50, 50);
+            this.laneX += this.swerveVelX * delta;
+            this.laneX = THREE.MathUtils.clamp(this.laneX, -50, 50);
 
             // Damping of lateral push
             this.swerveVelX *= Math.exp(-4.2 * delta);
@@ -2458,19 +2858,24 @@ class Zoombie {
             this.swerveYaw = 0;
         }
 
-        this.position.x = THREE.MathUtils.clamp(this.position.x, -50, 50);
-        this.mesh.position.x = this.position.x;
-        this.mesh.position.z = this.position.z;
+        this.laneX = THREE.MathUtils.clamp(this.laneX, -50, 50);
 
-        // Natural subtle roll into lane curves combined with collision bank
+        // Compute 3D world position from track point
+        const pt = getActiveTrackPoint(this.position.z);
+        this.position.x = pt.x + this.laneX * pt.right.x;
+        const worldZ = pt.z + this.laneX * pt.right.z;
+        this.mesh.position.set(this.position.x, 0, worldZ);
+
+        // Natural subtle roll into lane curves combined with cornering bank and collision bank
         const normalTilt = -lateralSpeed * 0.022;
         this.currentTilt = THREE.MathUtils.lerp(this.currentTilt, normalTilt, 7 * delta);
-        this.kartTiltGroup.rotation.z = this.currentTilt + this.swerveRoll;
+        const curveBank = -pt.curvature * 85.0;
+        this.kartTiltGroup.rotation.z = this.currentTilt + curveBank + this.swerveRoll;
 
-        // Natural subtle heading combined with collision yaw
+        // Natural subtle heading combined with track curvature heading and collision yaw
         const normalHeading = Math.atan2(lateralSpeed, targetSpeed) * 0.45;
         this.currentHeading = THREE.MathUtils.lerp(this.currentHeading, normalHeading, 6 * delta);
-        this.kartTiltGroup.rotation.y = this.currentHeading + this.swerveYaw;
+        this.kartTiltGroup.rotation.y = pt.heading + this.currentHeading + this.swerveYaw;
 
         // Tactile clay road rumble bounce & pitch
         const bounceRate = 18.0 + (this.currentSpeed / this.baseSpeed) * 8.0;
@@ -2484,21 +2889,28 @@ class Zoombie {
         // Dense tire smoke and clay dust plume billowing behind the rear wheels
         this.stepTimer += delta * this.currentSpeed;
         if (this.stepTimer >= 1.8) {
-            const mistX = 5.2; // Aligned with the outer rear wheels
-            const mistZ = -12.2; // Spawning directly behind the rear chassis
+            const cosH = Math.cos(pt.heading), sinH = Math.sin(pt.heading);
             const scale = 2.6 + Math.random() * 0.9;
-            spawnFootstepMist(this.position.x - mistX, this.position.z + mistZ, scale);
-            spawnFootstepMist(this.position.x + mistX, this.position.z + mistZ, scale);
+            const w1X = this.position.x + (-5.2 * cosH - (-12.2) * sinH);
+            const w1Z = worldZ + (-5.2 * sinH + (-12.2) * cosH);
+            const w2X = this.position.x + (5.2 * cosH - (-12.2) * sinH);
+            const w2Z = worldZ + (5.2 * sinH + (-12.2) * cosH);
+            spawnFootstepMist(w1X, w1Z, scale);
+            spawnFootstepMist(w2X, w2Z, scale);
             if (Math.random() < 0.45) {
-                spawnFootstepMist(this.position.x + (Math.random() - 0.5) * 3.2, this.position.z - 13.0, scale * 1.3);
+                const midX = this.position.x + ((Math.random() - 0.5) * 3.2 * cosH - (-13.0) * sinH);
+                const midZ = worldZ + ((Math.random() - 0.5) * 3.2 * sinH + (-13.0) * cosH);
+                spawnFootstepMist(midX, midZ, scale * 1.3);
             }
             this.stepTimer = 0;
         }
     }
 
     updateCelebrationPose(time) {
-        this.mesh.position.x = this.position.x;
-        this.mesh.position.z = this.position.z;
+        const pt = getActiveTrackPoint(this.position.z);
+        this.position.x = pt.x + this.laneX * pt.right.x;
+        const worldZ = pt.z + this.laneX * pt.right.z;
+        this.mesh.position.set(this.position.x, 0, worldZ);
         this.currentSpeed = 0;
         this.swerveRoll = 0;
         this.swerveYaw = 0;
@@ -2512,7 +2924,7 @@ class Zoombie {
             this.kartTiltGroup.rotation.z = Math.sin(time * 6) * 0.10;
         } else {
             this.kartTiltGroup.position.y = this.baseKartY + Math.sin(time * 6 + this.id) * 0.04;
-            this.kartTiltGroup.rotation.set(0, 0, 0);
+            this.kartTiltGroup.rotation.set(0, pt.heading, 0);
         }
     }
 
@@ -2557,6 +2969,7 @@ let ducks = racers; // Backward-compatible alias for console & external scripts
 let lbRowsCache = [];
 
 function initRacers() {
+    updateTrackForCurrentRace();
     racers.forEach(d => { scene.remove(d.mesh); d.dispose(); });
     racers = [];
     ducks = racers;
@@ -2593,6 +3006,7 @@ function resetRacersToStartGrid() {
     racers.sort((a, b) => a.id - b.id);
     for (let i = 0; i < racers.length; i++) {
         racers[i].startX = leftBound + (i * spacing);
+        racers[i].laneX = racers[i].startX;
         racers[i].resetToStartLine();
     }
     resetFootstepMist();
@@ -2959,6 +3373,14 @@ document.getElementById('restart-btn').addEventListener('click', () => {
     endScreen.classList.add('hidden');
     startScreen.classList.remove('hidden');
 
+    const restartBtn = document.getElementById('restart-btn');
+    if (restartBtn) {
+        restartBtn.style.removeProperty('--winner-color');
+        restartBtn.style.removeProperty('--winner-text-color');
+        restartBtn.style.removeProperty('--winner-border');
+        restartBtn.style.removeProperty('--winner-glow');
+    }
+
     const placementsList = document.getElementById('placements-list');
     if (placementsList) placementsList.innerHTML = '';
 
@@ -3058,7 +3480,7 @@ function getRacerBounds() {
     let minZ = Infinity, maxZ = -Infinity;
 
     for (let i = 0; i < racers.length; i++) {
-        const p = racers[i].position;
+        const p = racers[i].mesh.position;
         if (p.x < minX) minX = p.x;
         if (p.x > maxX) maxX = p.x;
         if (p.z < minZ) minZ = p.z;
@@ -3154,8 +3576,8 @@ function updateCamera(time, delta, leadRacer) {
     const bounds = getRacerBounds();
 
     // Move directional moonlight & non-shadow fill/rim lights along with the pack
-    moonLight.position.set(45, 95, bounds.centerZ + 40);
-    moonLight.target.position.set(0, 0, bounds.centerZ);
+    moonLight.position.set(bounds.centerX + 45, 95, bounds.centerZ + 40);
+    moonLight.target.position.set(bounds.centerX, 0, bounds.centerZ);
     moonLight.target.updateMatrixWorld();
 
     packFillLight.position.set(bounds.centerX - 16, 26, bounds.centerZ + 36);
@@ -3175,11 +3597,11 @@ function updateCamera(time, delta, leadRacer) {
         const angle = -0.25 + (t * 0.18);
 
         target.set(
-            winner.position.x + Math.sin(angle) * dist,
+            winner.mesh.position.x + Math.sin(angle) * dist,
             height,
-            winner.position.z + Math.cos(angle) * dist
+            winner.mesh.position.z + Math.cos(angle) * dist
         );
-        look.copy(winner.position).add(winnerCamOffset);
+        look.copy(winner.mesh.position).add(winnerCamOffset);
 
     } else if (raceState === RACE_STATE.INTRO) {
         // Camera start line zoom-in and flyby panning across all racers
@@ -3247,24 +3669,47 @@ function updateCamera(time, delta, leadRacer) {
             target.set(bounds.centerX, birdsEyeHeight, bounds.centerZ - birdsEyeDistZ);
             look.set(bounds.centerX, 2.5, Math.min(CONFIG.raceDistance + 10, bounds.centerZ + 35));
         } else {
+            const leadPt = getActiveTrackPoint(leadRacer.position.z);
+            const T = leadPt.tangent; // (tx, 0, tz) along road forward
+            const R = leadPt.right;   // (rx, 0, rz) along road right
+            const U = new THREE.Vector3(0, 1, 0); // world up
+
             if (camAngle === 0) {
                 // Front chase broadcast camera
-                const lookPoint = new THREE.Vector3(bounds.centerX, 4.0, bounds.centerZ * 0.70 + leadRacer.position.z * 0.30);
-                const unitDir = new THREE.Vector3(0, 0.32, 0.95).normalize();
+                const lookPoint = new THREE.Vector3(
+                    bounds.centerX,
+                    4.0,
+                    bounds.centerZ * 0.70 + leadRacer.mesh.position.z * 0.30
+                );
+                const unitDir = new THREE.Vector3()
+                    .addScaledVector(U, 0.32)
+                    .addScaledVector(T, 0.95)
+                    .normalize();
                 const fitDist = calcFitDistanceForAngle(bounds, unitDir, lookPoint, 0.80, 0.82);
                 target.copy(lookPoint).addScaledVector(unitDir, fitDist);
                 look.copy(lookPoint);
             } else if (camAngle === 1) {
                 // High elevated overview camera
                 const lookPoint = new THREE.Vector3(bounds.centerX, 3.5, bounds.centerZ);
-                const unitDir = new THREE.Vector3(0, 0.58, 0.81).normalize();
+                const unitDir = new THREE.Vector3()
+                    .addScaledVector(U, 0.58)
+                    .addScaledVector(T, 0.81)
+                    .normalize();
                 const fitDist = calcFitDistanceForAngle(bounds, unitDir, lookPoint, 0.80, 0.82);
                 target.copy(lookPoint).addScaledVector(unitDir, fitDist);
                 look.copy(lookPoint);
             } else {
                 // Right-side 3/4 dynamic broadcast camera (angled across track to keep pack in open center-right safe area)
-                const lookPoint = new THREE.Vector3(bounds.centerX - 2.0, 4.0, bounds.centerZ);
-                const unitDir = new THREE.Vector3(0.48, 0.35, 0.80).normalize();
+                const lookPoint = new THREE.Vector3(
+                    bounds.centerX - 2.0 * R.x,
+                    4.0,
+                    bounds.centerZ - 2.0 * R.z
+                );
+                const unitDir = new THREE.Vector3()
+                    .addScaledVector(R, 0.48)
+                    .addScaledVector(U, 0.35)
+                    .addScaledVector(T, 0.80)
+                    .normalize();
                 const fitDist = calcFitDistanceForAngle(bounds, unitDir, lookPoint, 0.80, 0.82);
                 target.copy(lookPoint).addScaledVector(unitDir, fitDist);
                 look.copy(lookPoint);
@@ -3384,17 +3829,17 @@ function animate() {
         for (let i = 0; i < racers.length; i++) {
             for (let j = i + 1; j < racers.length; j++) {
                 const d1 = racers[i], d2 = racers[j];
-                const dx = d1.position.x - d2.position.x;
+                const dx = d1.laneX - d2.laneX;
                 const dz = d1.position.z - d2.position.z;
                 const distSq = dx * dx + dz * dz;
                 if (distSq < minSepSq) {
                     const dist = Math.sqrt(distSq);
-                    if (dist < 0.001) { d1.position.x += 0.1; continue; }
+                    if (dist < 0.001) { d1.laneX += 0.1; continue; }
                     const overlap = minSep - dist;
                     const push = overlap * 0.52;
                     const nx = dx / dist, nz = dz / dist;
-                    d1.position.x += nx * push; d1.position.z += nz * push;
-                    d2.position.x -= nx * push; d2.position.z -= nz * push;
+                    d1.laneX += nx * push; d1.position.z += nz * push;
+                    d2.laneX -= nx * push; d2.position.z -= nz * push;
 
                     // Trigger dramatic swerves & thud sound ONLY upon collision with another kart
                     const c1 = d1.triggerCollisionSwerve(d2, time, nx);
@@ -3443,6 +3888,15 @@ function animate() {
 
             winnerText.innerText = `WINNER: #${trueWinner.id + 1} ${trueWinner.name.toUpperCase()}!`;
             winnerText.style.color = trueWinner.lightenedColor || lightenColor(trueWinner.color, 0.4);
+
+            // Style NEXT RACE button with the winner's color to avoid color confusion
+            const restartBtn = document.getElementById('restart-btn');
+            if (restartBtn) {
+                restartBtn.style.setProperty('--winner-color', trueWinner.hexColor);
+                restartBtn.style.setProperty('--winner-text-color', trueWinner.txtColor);
+                restartBtn.style.setProperty('--winner-border', trueWinner.lightenedColor || trueWinner.hexColor);
+                restartBtn.style.setProperty('--winner-glow', `${trueWinner.hexColor}88`);
+            }
 
             // Populate other placements (2nd through 8th)
             const placementsList = document.getElementById('placements-list');

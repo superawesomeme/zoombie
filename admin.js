@@ -174,6 +174,11 @@
         badge.textContent = state;
         badge.className = 'state-badge';
 
+        mainBtn.style.backgroundColor = '';
+        mainBtn.style.color = '';
+        mainBtn.style.borderColor = '';
+        mainBtn.style.boxShadow = '';
+
         switch (state) {
             case 'BETTING':
                 badge.classList.add('badge-betting');
@@ -199,14 +204,28 @@
                 editBtn.classList.add('hidden');
                 break;
 
-            case 'FINISHED':
+            case 'FINISHED': {
                 badge.classList.add('badge-finished');
                 badge.textContent = 'WINNER ANNOUNCED';
                 mainBtn.textContent = 'NEXT RACE';
                 mainBtn.className = 'btn btn-primary';
                 mainBtn.disabled = false;
                 editBtn.classList.add('hidden');
+                const lastHistory = (session.history && session.history.length > 0)
+                    ? session.history[session.history.length - 1]
+                    : null;
+                if (lastHistory && typeof lastHistory.winnerId === 'number' && typeof COLORS !== 'undefined') {
+                    const winColor = COLORS[lastHistory.winnerId % COLORS.length];
+                    const hexColor = '#' + winColor.toString(16).padStart(6, '0');
+                    const r = (winColor >> 16) & 255, g = (winColor >> 8) & 255, b = winColor & 255;
+                    const txtCol = (((r * 299) + (g * 587) + (b * 114)) / 1000) >= 128 ? '#000' : '#fff';
+                    mainBtn.style.backgroundColor = hexColor;
+                    mainBtn.style.color = txtCol;
+                    mainBtn.style.borderColor = hexColor;
+                    mainBtn.style.boxShadow = `0 4px 16px ${hexColor}66`;
+                }
                 break;
+            }
         }
     }
 

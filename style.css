@@ -595,6 +595,21 @@ button:hover {
     padding: calc(var(--ui-scale) * 0.8) calc(var(--ui-scale) * 2.5);
 }
 
+#restart-btn {
+    background: var(--winner-color, var(--broadcast-accent));
+    color: var(--winner-text-color, #ffffff);
+    box-shadow: 0 4px 20px var(--winner-glow, rgba(192, 66, 255, 0.45));
+    border: 2px solid var(--winner-border, transparent);
+    transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease, filter 0.2s ease;
+}
+
+#restart-btn:hover {
+    background: var(--winner-color, var(--broadcast-accent));
+    color: var(--winner-text-color, #ffffff);
+    filter: brightness(1.15);
+    box-shadow: 0 6px 28px var(--winner-glow, rgba(192, 66, 255, 0.65));
+}
+
 /* Placements Panel (Emerging from the right side of the winner display box) */
 .placements-panel {
     background: #11091c;

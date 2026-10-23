@@ -1449,9 +1449,9 @@ function spawnBatSwarm(time) {
     for (let i = 0; i < count; i++) {
         const rawBat = cloneBatModel(MonsterModelManager.batTemplate);
 
-        // Orient raw bat inside wrapper so its head points forward along velocity vector (-Z in local Three.js space)
+        // Orient raw bat inside wrapper so its head points forward along flight trajectory
         const batWrapper = new THREE.Group();
-        rawBat.rotation.y = Math.PI; // Face head forward
+        rawBat.rotation.y = 0; // Natural model heading faces forward
         batWrapper.add(rawBat);
 
         // Generous scale (0.75 to 1.20 -> ~5.0m to ~8.2m wingspan for vivid visibility)

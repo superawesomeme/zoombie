@@ -871,11 +871,11 @@ function generateTrackHazards() {
     const maxZ = 0.90 * CONFIG.raceDistance; // 3780m (not within last 10%)
     const minSeparation = 0.05 * CONFIG.raceDistance; // 210m (not within 5% of each other)
 
-    // Count increased by 50% (from 1-4 to 2-6 occurrences per race)
+    // Count of leaves increased by a multiple of 3 (from 2-6 to 6-18 occurrences per race)
     const slimeCount = 2 + Math.floor(Math.random() * 5);
-    const leafCount = 2 + Math.floor(Math.random() * 5);
+    const leafCount = (2 + Math.floor(Math.random() * 5)) * 3;
 
-    const placedZ = [];
+    const placedHazards = [];
 
     // Distribute hazards across all 8 racer lanes so racers 1 and 8 have an equal chance of encountering hazards
     const laneSpacing = 13.0;
@@ -893,27 +893,34 @@ function generateTrackHazards() {
         return laneX + (Math.random() - 0.5) * 5.0;
     }
 
-    function pickValidZ() {
-        for (let sep = minSeparation; sep >= minSeparation * 0.75; sep *= 0.9) {
+    function pickValidPlacement() {
+        const x = pickLaneX();
+        // In the same or adjacent lane (|dx| < 18m), enforce 210m (5% track). Across different lanes, enforce at least 65m.
+        for (let sepScale = 1.0; sepScale >= 0.7; sepScale *= 0.9) {
             for (let attempts = 0; attempts < 400; attempts++) {
                 const candidateZ = minZ + Math.random() * (maxZ - minZ);
-                const tooClose = placedZ.some(pz => Math.abs(candidateZ - pz) < sep);
+                const tooClose = placedHazards.some(h => {
+                    const sameLane = Math.abs(x - h.x) < 18.0;
+                    const requiredSep = sameLane ? (minSeparation * sepScale) : 65.0;
+                    return Math.abs(candidateZ - h.z) < requiredSep;
+                });
                 if (!tooClose) {
-                    placedZ.push(candidateZ);
-                    return candidateZ;
+                    placedHazards.push({ x, z: candidateZ });
+                    return { x, z: candidateZ };
                 }
             }
         }
         const candidateZ = minZ + Math.random() * (maxZ - minZ);
-        placedZ.push(candidateZ);
-        return candidateZ;
+        placedHazards.push({ x, z: candidateZ });
+        return { x, z: candidateZ };
     }
 
     // 1. Generate Slime Hazards (slime.glb)
     if (MonsterModelManager.slimeTemplate) {
         for (let i = 0; i < slimeCount; i++) {
-            const z = pickValidZ();
-            const x = pickLaneX();
+            const placement = pickValidPlacement();
+            const x = placement.x;
+            const z = placement.z;
 
             const slimeMesh = MonsterModelManager.slimeTemplate.clone(true);
             const scale = 5.2 + Math.random() * 1.2;
@@ -938,8 +945,9 @@ function generateTrackHazards() {
     // 2. Generate Leaf Pile Hazards (Mario Leaf small piles)
     if (MonsterModelManager.leafTemplate) {
         for (let i = 0; i < leafCount; i++) {
-            const z = pickValidZ();
-            const x = pickLaneX();
+            const placement = pickValidPlacement();
+            const x = placement.x;
+            const z = placement.z;
 
             const pileGroup = new THREE.Group();
             pileGroup.position.set(x, 0.05, z);
@@ -1006,7 +1014,7 @@ function checkHazardCollisions(time) {
                 const hitDist = hazard.radius + 4.2;
                 if (dx * dx + dz * dz < hitDist * hitDist) {
                     hazard.hitRacers.add(racer.id);
-                    racer.applySlowdown(0.70, 1.5);
+                    racer.applySlowdown(0.70, 8.0);
                     playSlimeSound(time);
                     spawnFootstepMist(hazard.x, hazard.z, 3.6);
                 }
@@ -1024,7 +1032,7 @@ function checkHazardCollisions(time) {
                 if (dx * dx + dz * dz < hitDist * hitDist) {
                     hazard.scattered = true;
                     hazard.scatterTime = 0;
-                    racer.applySlowdown(0.85, 1.0);
+                    racer.applySlowdown(0.85, 8.0);
                     playLeavesSound(time);
 
                     // Scatter leaves outward and forward
@@ -1890,9 +1898,11 @@ class Zoombie {
         this.swerveDuration = 0;
         this.lastCollisionTime = -10;
 
-        // Hazard slowdown dynamics (slime: 70% for 1.5s; leaves: 85% for 1.0s)
+        // Hazard slowdown dynamics (slime: 70%, leaves: 85%; minimum 8s recovery to full speed)
         this.slowdownMultiplier = 1.0;
+        this.slowdownBaseMultiplier = 1.0;
         this.slowdownTimer = 0;
+        this.slowdownDuration = 8.0;
 
         // Main tilt group for chassis bank/bounce
         this.kartTiltGroup = new THREE.Group();
@@ -1924,9 +1934,15 @@ class Zoombie {
         scene.add(this.mesh);
     }
 
-    applySlowdown(multiplier, duration) {
-        this.slowdownMultiplier = multiplier;
+    applySlowdown(multiplier, duration = 8.0) {
+        if (this.slowdownTimer > 0) {
+            this.slowdownBaseMultiplier = Math.min(this.slowdownBaseMultiplier, multiplier);
+        } else {
+            this.slowdownBaseMultiplier = multiplier;
+        }
+        this.slowdownDuration = duration;
         this.slowdownTimer = duration;
+        this.slowdownMultiplier = this.slowdownBaseMultiplier;
     }
 
     triggerCollisionSwerve(otherRacer, time, nx) {
@@ -1998,7 +2014,9 @@ class Zoombie {
         this.lastCollisionTime = -10;
 
         this.slowdownMultiplier = 1.0;
+        this.slowdownBaseMultiplier = 1.0;
         this.slowdownTimer = 0;
+        this.slowdownDuration = 8.0;
 
         this.mesh.position.set(this.startX, 0, 0);
         this.mesh.rotation.set(0, 0, 0);
@@ -2086,23 +2104,49 @@ class Zoombie {
      * Arcade kart locomotion & physics: natural lane holding, dramatic swerves only upon collision.
      */
     updateRacingMovement(delta, time) {
+        // Minimum 8-second gradual recovery from hazard slowdown
+        let recoveryProgress = 1.0;
+        if (this.slowdownTimer > 0) {
+            this.slowdownTimer = Math.max(0, this.slowdownTimer - delta);
+            recoveryProgress = 1.0 - (this.slowdownTimer / this.slowdownDuration);
+            // Gradually start speeding up from the affected state towards 1.0 over 8 seconds
+            this.slowdownMultiplier = this.slowdownBaseMultiplier + (1.0 - this.slowdownBaseMultiplier) * Math.pow(recoveryProgress, 1.25);
+            if (this.slowdownTimer === 0) {
+                this.slowdownMultiplier = 1.0;
+                this.slowdownBaseMultiplier = 1.0;
+            }
+        } else {
+            this.slowdownMultiplier = 1.0;
+            this.slowdownBaseMultiplier = 1.0;
+        }
+
         const energy = Math.sin(time * 0.5 + this.energyCycle);
         let targetSpeed = this.baseSpeed;
-        if (energy > 0.4) targetSpeed *= 1.15 + (this.aggressiveness * 0.2);
-        else if (energy < -0.4) targetSpeed *= 0.88;
+
+        // Energy oscillations: suppress surges while recovering from a hazard
+        if (energy > 0.4) {
+            // Cannot surge ahead while affected by leaves or slime; energy boost scales with recovery
+            const surgeFactor = (this.slowdownTimer > 0) ? (recoveryProgress * 0.4) : 1.0;
+            targetSpeed *= 1.0 + (0.15 + (this.aggressiveness * 0.2)) * surgeFactor;
+        } else if (energy < -0.4) {
+            targetSpeed *= 0.88;
+        }
         targetSpeed += (Math.random() - 0.5) * (this.baseSpeed * 0.08);
 
         const distRemaining = CONFIG.raceDistance - this.position.z;
-        if (distRemaining < 320 && distRemaining > 0) targetSpeed *= 1.12;
-
-        // Apply hazard slowdown effect (slime: 70% for 1.5s; leaves: 85% for 1.0s)
-        if (this.slowdownTimer > 0) {
-            this.slowdownTimer -= delta;
-        } else if (this.slowdownMultiplier < 1.0) {
-            this.slowdownMultiplier = THREE.MathUtils.lerp(this.slowdownMultiplier, 1.0, Math.min(1.0, 3.2 * delta));
-            if (this.slowdownMultiplier > 0.99) this.slowdownMultiplier = 1.0;
+        if (distRemaining < 320 && distRemaining > 0) {
+            const sprintFactor = (this.slowdownTimer > 0) ? recoveryProgress : 1.0;
+            targetSpeed *= 1.0 + 0.12 * sprintFactor;
         }
+
+        // Apply hazard slowdown multiplier
         targetSpeed *= this.slowdownMultiplier;
+
+        // Strict cap: Racers must NOT reach top speed again for at least 8 seconds
+        if (this.slowdownTimer > 0) {
+            const maxPermittedSpeed = this.baseSpeed * (this.slowdownBaseMultiplier + (1.0 - this.slowdownBaseMultiplier) * recoveryProgress);
+            targetSpeed = Math.min(targetSpeed, maxPermittedSpeed);
+        }
 
         this.currentSpeed = targetSpeed;
         this.position.z += targetSpeed * delta;
@@ -2630,6 +2674,9 @@ document.getElementById('restart-btn').addEventListener('click', () => {
     endScreen.classList.add('hidden');
     startScreen.classList.remove('hidden');
 
+    const placementsList = document.getElementById('placements-list');
+    if (placementsList) placementsList.innerHTML = '';
+
     if (countdownTimerId) {
         clearInterval(countdownTimerId);
         countdownTimerId = null;
@@ -3109,6 +3156,43 @@ function animate() {
 
             winnerText.innerText = `WINNER: #${trueWinner.id + 1} ${trueWinner.name.toUpperCase()}!`;
             winnerText.style.color = trueWinner.lightenedColor || lightenColor(trueWinner.color, 0.4);
+
+            // Populate other placements (2nd through 8th)
+            const placementsList = document.getElementById('placements-list');
+            if (placementsList) {
+                placementsList.innerHTML = '';
+                const ordinals = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
+                for (let i = 1; i < racers.length; i++) {
+                    const r = racers[i];
+                    const row = document.createElement('div');
+                    row.className = 'placement-row';
+
+                    const rank = document.createElement('div');
+                    rank.className = 'placement-rank';
+                    rank.textContent = ordinals[i] || `${i + 1}th`;
+
+                    const badge = document.createElement('div');
+                    badge.className = 'placement-badge';
+                    badge.style.backgroundColor = r.hexColor;
+                    badge.style.color = r.txtColor;
+                    const badgeSpan = document.createElement('span');
+                    badgeSpan.textContent = r.idPlus1;
+                    badge.appendChild(badgeSpan);
+
+                    const nameBar = document.createElement('div');
+                    nameBar.className = 'placement-name-bar';
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'placement-name';
+                    nameSpan.style.color = r.lightenedColor || lightenColor(r.color, 0.4);
+                    nameSpan.textContent = r.name.toUpperCase();
+                    nameBar.appendChild(nameSpan);
+
+                    row.appendChild(rank);
+                    row.appendChild(badge);
+                    row.appendChild(nameBar);
+                    placementsList.appendChild(row);
+                }
+            }
 
             const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
             const winnerPayoutEl = document.getElementById('winner-payout-text');

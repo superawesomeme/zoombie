@@ -542,6 +542,15 @@ button:hover {
 /* ============================================
    WINNER / END SCREEN
    ============================================ */
+.end-screen-layout {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: center;
+    gap: calc(var(--ui-scale) * 1.5);
+    max-width: 95vw;
+}
+
 .winner-slate {
     background: #11091c;
     border: 1px solid #4a2c68;
@@ -550,6 +559,10 @@ button:hover {
     transform: skewX(-5deg);
     box-shadow: 0 calc(var(--ui-scale) * 1.2) calc(var(--ui-scale) * 3) rgba(0,0,0,0.9);
     position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: calc(var(--ui-scale) * 24);
 }
 
 .finish-flag {
@@ -580,6 +593,118 @@ button:hover {
 #end-screen button {
     font-size: calc(var(--ui-scale) * 1.4);
     padding: calc(var(--ui-scale) * 0.8) calc(var(--ui-scale) * 2.5);
+}
+
+/* Placements Panel (Emerging from the right side of the winner display box) */
+.placements-panel {
+    background: #11091c;
+    border: 1px solid #4a2c68;
+    padding: calc(var(--ui-scale) * 1.6) calc(var(--ui-scale) * 1.8);
+    transform: skewX(-5deg);
+    box-shadow: 0 calc(var(--ui-scale) * 1.2) calc(var(--ui-scale) * 3) rgba(0, 0, 0, 0.9);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: calc(var(--ui-scale) * 21);
+    animation: placementsSlideOut 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes placementsSlideOut {
+    0% {
+        opacity: 0;
+        transform: skewX(-5deg) translateX(calc(var(--ui-scale) * -3));
+    }
+    100% {
+        opacity: 1;
+        transform: skewX(-5deg) translateX(0);
+    }
+}
+
+.placements-header {
+    font-size: calc(var(--ui-scale) * 1.15);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: calc(var(--ui-scale) * 0.12);
+    color: #e1bee7;
+    margin-bottom: calc(var(--ui-scale) * 0.7);
+    text-align: left;
+    transform: skewX(5deg);
+    border-bottom: 1px solid rgba(225, 190, 231, 0.25);
+    padding-bottom: calc(var(--ui-scale) * 0.3);
+}
+
+.placements-list {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--ui-scale) * 0.22);
+}
+
+.placement-row {
+    display: flex;
+    align-items: center;
+    height: calc(var(--ui-scale) * 2.25);
+    transform: skewX(5deg);
+}
+
+.placement-rank {
+    width: calc(var(--ui-scale) * 2.6);
+    font-weight: 700;
+    font-size: calc(var(--ui-scale) * 1.05);
+    color: #ffffff;
+    text-align: right;
+    padding-right: calc(var(--ui-scale) * 0.6);
+    flex-shrink: 0;
+    font-family: 'Roboto Condensed', sans-serif;
+}
+
+.placement-badge {
+    height: 100%;
+    width: calc(var(--ui-scale) * 2.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: calc(var(--ui-scale) * 1.15);
+    transform: skewX(-14deg);
+    flex-shrink: 0;
+    margin-right: calc(var(--ui-scale) * 0.4);
+}
+
+.placement-badge span {
+    transform: skewX(14deg);
+}
+
+.placement-name-bar {
+    flex-grow: 1;
+    height: 100%;
+    background: #181324;
+    display: flex;
+    align-items: center;
+    padding: 0 calc(var(--ui-scale) * 1.0);
+    transform: skewX(-14deg);
+    border-right: calc(var(--ui-scale) * 0.3) solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+
+.placement-name {
+    font-weight: 700;
+    font-size: calc(var(--ui-scale) * 1.05);
+    text-transform: uppercase;
+    letter-spacing: calc(var(--ui-scale) * 0.05);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transform: skewX(14deg);
+    font-family: 'Roboto Condensed', sans-serif;
+}
+
+@media (max-width: 900px) {
+    .end-screen-layout {
+        flex-direction: column;
+        gap: calc(var(--ui-scale) * 1.0);
+        max-height: 95vh;
+        overflow-y: auto;
+    }
 }
 
 /* ============================================

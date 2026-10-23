@@ -1126,57 +1126,54 @@ function spawnBatSwarm(time) {
     // A flock of 3 to 6 bats
     const count = 3 + Math.floor(Math.random() * 4);
 
-    const camPos = camera.position.clone();
-    const camDir = new THREE.Vector3();
-    camera.getWorldDirection(camDir);
-    const camRight = new THREE.Vector3().crossVectors(camDir, camera.up).normalize();
-    const camUp = new THREE.Vector3().crossVectors(camRight, camDir).normalize();
-
-    // 3 Dynamic Flight Trajectory Archetypes
-    // Pattern 0: Swoop in from dark distance ahead, buzz right past the camera lens (head-on)
-    // Pattern 1: Dart from behind/side of camera, cross view into the night sky ahead
-    // Pattern 2: Diagonal cross-screen dive
+    // 3 Dynamic Flight Trajectory Archetypes (in camera-relative coordinates):
+    // In camera space:
+    // +Z is forward along the camera's view direction (into the distance ahead)
+    // -Z is backward behind the camera (past the viewer)
+    // +X is camera right, -X is camera left
+    // +Y is camera up, -Y is camera down
+    // All trajectories start in the distance (+Z: 85 to 115) and swoop towards and past the camera (-Z: -35 to -55)
+    // Bats ALWAYS fly towards the camera/viewer, swooping right past the screen!
     const pattern = Math.floor(Math.random() * 3);
 
-    let baseP0, baseP1, baseP2;
+    let baseRelP0, baseRelP1, baseRelP2;
 
     if (pattern === 0) {
-        // Head-on swoop towards and right past camera lens
-        baseP0 = camPos.clone().addScaledVector(camDir, 80).addScaledVector(camUp, 12);
-        baseP1 = camPos.clone().addScaledVector(camDir, 11).addScaledVector(camUp, 1.2);
-        baseP2 = camPos.clone().addScaledVector(camDir, -45).addScaledVector(camUp, -5);
+        // Archetype 0: Head-on swoop - emerge from high dark sky ahead, dive straight towards lens, swoop past
+        baseRelP0 = new THREE.Vector3(0, 14, 100);
+        baseRelP1 = new THREE.Vector3(0, 2.5, 16);
+        baseRelP2 = new THREE.Vector3((Math.random() < 0.5 ? -1 : 1) * 20, -3, -45);
     } else if (pattern === 1) {
-        // Overtake from behind/side and rush ahead across view
-        baseP0 = camPos.clone().addScaledVector(camDir, -35).addScaledVector(camUp, 5);
-        baseP1 = camPos.clone().addScaledVector(camDir, 12).addScaledVector(camUp, 2.5);
-        baseP2 = camPos.clone().addScaledVector(camDir, 95).addScaledVector(camUp, 18);
+        // Archetype 1: Diagonal dive from high-left ahead to low-right behind camera
+        baseRelP0 = new THREE.Vector3(-34, 16, 92);
+        baseRelP1 = new THREE.Vector3(-2, 3.2, 17);
+        baseRelP2 = new THREE.Vector3(36, -4, -45);
     } else {
-        // Cross-screen oblique swoop
-        const side = Math.random() < 0.5 ? 1 : -1;
-        baseP0 = camPos.clone().addScaledVector(camDir, 50).addScaledVector(camRight, side * 45).addScaledVector(camUp, 14);
-        baseP1 = camPos.clone().addScaledVector(camDir, 11).addScaledVector(camRight, -side * 4).addScaledVector(camUp, 1);
-        baseP2 = camPos.clone().addScaledVector(camDir, -30).addScaledVector(camRight, -side * 40).addScaledVector(camUp, -6);
+        // Archetype 2: Diagonal dive from high-right ahead to low-left behind camera
+        baseRelP0 = new THREE.Vector3(34, 16, 92);
+        baseRelP1 = new THREE.Vector3(2, 3.2, 17);
+        baseRelP2 = new THREE.Vector3(-36, -4, -45);
     }
 
     for (let i = 0; i < count; i++) {
         const rawBat = cloneBatModel(MonsterModelManager.batTemplate);
 
-        // Orient raw bat inside wrapper so its forward motion matches pivot lookAt
+        // Orient raw bat inside wrapper so its head points forward along velocity vector (-Z in local Three.js space)
         const batWrapper = new THREE.Group();
         rawBat.rotation.y = Math.PI; // Face head forward
         batWrapper.add(rawBat);
 
-        // Generous scale (0.70 to 1.15 -> ~4.7m to ~7.8m wingspan for vivid visibility)
-        const scale = 0.70 + Math.random() * 0.45;
+        // Generous scale (0.75 to 1.20 -> ~5.0m to ~8.2m wingspan for vivid visibility)
+        const scale = 0.75 + Math.random() * 0.45;
         batWrapper.scale.setScalar(scale);
 
-        // Ensure materials are solid and visible with depthWrite intact
+        // Ensure materials are solid, visible, and can fade opacity
         const batMaterials = [];
         rawBat.traverse(c => {
             if (c.isMesh && c.material) {
                 c.material = c.material.clone();
                 c.material.transparent = true;
-                c.material.opacity = 1.0;
+                c.material.opacity = 0.0;
                 c.material.depthWrite = true;
                 batMaterials.push(c.material);
             }
@@ -1187,24 +1184,29 @@ function spawnBatSwarm(time) {
         if (MonsterModelManager.batAnimationClip) {
             mixer = new THREE.AnimationMixer(rawBat);
             const action = mixer.clipAction(MonsterModelManager.batAnimationClip);
-            action.timeScale = 1.15 + Math.random() * 0.5; // Fast flapping wings
+            action.timeScale = 1.25 + Math.random() * 0.5; // Fast flapping wings
             action.play();
         }
 
-        // Individualized trajectory control points with flock spread
-        const p0 = baseP0.clone()
-            .addScaledVector(camRight, (Math.random() - 0.5) * 16)
-            .addScaledVector(camUp, (Math.random() - 0.5) * 6);
+        // Individualized camera-relative control points with flock scatter
+        const relP0 = baseRelP0.clone().add(new THREE.Vector3(
+            (Math.random() - 0.5) * 18,
+            (Math.random() - 0.5) * 6,
+            (Math.random() - 0.5) * 15
+        ));
 
-        const p1 = baseP1.clone()
-            .addScaledVector(camRight, (Math.random() - 0.5) * 8)
-            .addScaledVector(camUp, (Math.random() - 0.5) * 4);
+        const relP1 = baseRelP1.clone().add(new THREE.Vector3(
+            (Math.random() - 0.5) * 8,
+            (Math.random() - 0.5) * 3,
+            (Math.random() - 0.5) * 6
+        ));
 
-        const p2 = baseP2.clone()
-            .addScaledVector(camRight, (Math.random() - 0.5) * 22)
-            .addScaledVector(camUp, (Math.random() - 0.5) * 10);
+        const relP2 = baseRelP2.clone().add(new THREE.Vector3(
+            (Math.random() - 0.5) * 20,
+            (Math.random() - 0.5) * 8,
+            (Math.random() - 0.5) * 12
+        ));
 
-        batWrapper.position.copy(p0);
         batWrapper.visible = false;
         batsGroup.add(batWrapper);
 
@@ -1212,19 +1214,19 @@ function spawnBatSwarm(time) {
             group: batWrapper,
             materials: batMaterials,
             mixer: mixer,
-            p0: p0,
-            p1: p1,
-            p2: p2,
-            delay: i * (0.08 + Math.random() * 0.12), // Quick succession flock launch
+            relP0: relP0,
+            relP1: relP1,
+            relP2: relP2,
+            delay: i * (0.09 + Math.random() * 0.12), // Quick succession flock launch
             elapsed: 0,
-            duration: 2.4 + Math.random() * 0.8, // 2.4s - 3.2s flight duration
+            duration: 2.3 + Math.random() * 0.7, // 2.3s - 3.0s flight duration
             seed: Math.random() * 20
         });
     }
 }
 
 function updateAmbientBats(delta, time) {
-    if (!MonsterModelManager.batTemplate) return;
+    if (!MonsterModelManager.batTemplate || !camera) return;
 
     // Schedule swarms every 10 to 18 seconds
     if (time >= nextBatFlightTime) {
@@ -1233,6 +1235,13 @@ function updateAmbientBats(delta, time) {
     }
 
     if (activeBats.length === 0) return;
+
+    // Instantaneous camera orientation basis
+    const camPos = camera.position;
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
+    const camRight = new THREE.Vector3().crossVectors(camDir, camera.up).normalize();
+    const camUp = new THREE.Vector3().crossVectors(camRight, camDir).normalize();
 
     for (let i = activeBats.length - 1; i >= 0; i--) {
         const bat = activeBats[i];
@@ -1251,43 +1260,47 @@ function updateAmbientBats(delta, time) {
 
         const t = Math.min(1.0, bat.elapsed / bat.duration);
 
-        // Quadratic Bezier interpolation
+        // Quadratic Bezier interpolation in camera-relative space
         const oneMinusT = 1.0 - t;
         const b0 = oneMinusT * oneMinusT;
         const b1 = 2.0 * oneMinusT * t;
         const b2 = t * t;
 
-        const posX = b0 * bat.p0.x + b1 * bat.p1.x + b2 * bat.p2.x;
-        const posY = b0 * bat.p0.y + b1 * bat.p1.y + b2 * bat.p2.y;
-        const posZ = b0 * bat.p0.z + b1 * bat.p1.z + b2 * bat.p2.z;
+        const relX = b0 * bat.relP0.x + b1 * bat.relP1.x + b2 * bat.relP2.x;
+        const relY = b0 * bat.relP0.y + b1 * bat.relP1.y + b2 * bat.relP2.y;
+        const relZ = b0 * bat.relP0.z + b1 * bat.relP1.z + b2 * bat.relP2.z;
 
         // High-frequency fluttering & organic weaving
-        const flutter = Math.sin(bat.elapsed * 16 + bat.seed) * 1.0;
-        const sway = Math.cos(bat.elapsed * 13 + bat.seed) * 0.8;
+        const flutter = Math.sin(bat.elapsed * 18 + bat.seed) * 0.85;
+        const sway = Math.cos(bat.elapsed * 13 + bat.seed) * 0.75;
 
-        bat.group.position.set(posX, posY + flutter, posZ + sway);
+        // Compute world position based on camera's current reference frame
+        const posX = camPos.x + camRight.x * (relX + sway) + camUp.x * (relY + flutter) + camDir.x * relZ;
+        const posY = camPos.y + camRight.y * (relX + sway) + camUp.y * (relY + flutter) + camDir.y * relZ;
+        const posZ = camPos.z + camRight.z * (relX + sway) + camUp.z * (relY + flutter) + camDir.z * relZ;
 
-        // Orient along tangent velocity vector
-        const nextT = Math.min(1.0, t + 0.04);
-        const nextOneMinusT = 1.0 - nextT;
-        const nb0 = nextOneMinusT * nextOneMinusT;
-        const nb1 = 2.0 * nextOneMinusT * nextT;
-        const nb2 = nextT * nextT;
-        const nextPos = new THREE.Vector3(
-            nb0 * bat.p0.x + nb1 * bat.p1.x + nb2 * bat.p2.x,
-            nb0 * bat.p0.y + nb1 * bat.p1.y + nb2 * bat.p2.y + Math.sin((bat.elapsed + 0.04) * 16 + bat.seed) * 1.0,
-            nb0 * bat.p0.z + nb1 * bat.p1.z + nb2 * bat.p2.z + Math.cos((bat.elapsed + 0.04) * 13 + bat.seed) * 0.8
-        );
+        bat.group.position.set(posX, posY, posZ);
 
-        bat.group.lookAt(nextPos);
-        bat.group.rotation.z += sway * 0.28; // Dynamic banking roll
+        // Velocity tangent vector for forward orientation: d/dt Bezier curve
+        // d/dt = 2*(1 - t)*(P1 - P0) + 2*t*(P2 - P1)
+        const tanRelX = 2 * oneMinusT * (bat.relP1.x - bat.relP0.x) + 2 * t * (bat.relP2.x - bat.relP1.x);
+        const tanRelY = 2 * oneMinusT * (bat.relP1.y - bat.relP0.y) + 2 * t * (bat.relP2.y - bat.relP1.y);
+        const tanRelZ = 2 * oneMinusT * (bat.relP1.z - bat.relP0.z) + 2 * t * (bat.relP2.z - bat.relP1.z);
 
-        // Fade in rapidly upon launch and fade out at far exit
+        const tanWorldX = camRight.x * tanRelX + camUp.x * tanRelY + camDir.x * tanRelZ;
+        const tanWorldY = camRight.y * tanRelX + camUp.y * tanRelY + camDir.y * tanRelZ;
+        const tanWorldZ = camRight.z * tanRelX + camUp.z * tanRelY + camDir.z * tanRelZ;
+
+        const lookTarget = new THREE.Vector3(posX + tanWorldX, posY + tanWorldY, posZ + tanWorldZ);
+        bat.group.lookAt(lookTarget);
+        bat.group.rotation.z += sway * 0.22; // Dynamic banking roll
+
+        // Fade in rapidly as it emerges out of the distance, fade out at far exit
         let opacity = 1.0;
-        if (t < 0.10) {
-            opacity = t / 0.10;
-        } else if (t > 0.85) {
-            opacity = (1.0 - t) / 0.15;
+        if (t < 0.12) {
+            opacity = t / 0.12;
+        } else if (t > 0.86) {
+            opacity = (1.0 - t) / 0.14;
         }
 
         for (let m = 0; m < bat.materials.length; m++) {

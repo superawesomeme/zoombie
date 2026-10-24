@@ -471,8 +471,8 @@ renderer.setClearColor(SKY_COLOR, 1);
 
 // Distance Fog matching the deep midnight purple sky for seamless infinite horizon fade
 const FOG_COLOR = SKY_COLOR;
-const FOG_NEAR = 180;
-const FOG_FAR = 1200;
+const FOG_NEAR = 200;
+const FOG_FAR = 1800;
 scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR, FOG_FAR);
 
 // --- BALANCED CARTOON NIGHT LIGHTING (Not over-exposed, strong colour separation) ---
@@ -490,11 +490,12 @@ moonLight.shadow.mapSize.width = 2048;
 moonLight.shadow.mapSize.height = 2048;
 moonLight.shadow.camera.near = 10;
 moonLight.shadow.camera.far = 260;
-moonLight.shadow.camera.left = -85;
-moonLight.shadow.camera.right = 85;
-moonLight.shadow.camera.top = 105;
-moonLight.shadow.camera.bottom = -105;
-moonLight.shadow.bias = -0.0005;
+moonLight.shadow.camera.left = -90;
+moonLight.shadow.camera.right = 90;
+moonLight.shadow.camera.top = 110;
+moonLight.shadow.camera.bottom = -110;
+moonLight.shadow.bias = -0.0002;
+moonLight.shadow.normalBias = 0.04;
 scene.add(moonLight);
 scene.add(moonLight.target);
 
@@ -902,7 +903,7 @@ function buildTrackSurface() {
     const halfW = CONFIG.roadWidth / 2;
     const kerbW = 2.5;
     const kerbH = 0.9;
-    const vergeW = 1200;
+    const vergeW = 320;
 
     // Road buffers (2 verts per step)
     const roadPos = new Float32Array(count * 2 * 3);
@@ -1073,6 +1074,19 @@ function buildTrackSurface() {
     const rightVerge = new THREE.Mesh(rVergeGeo, vergeMat);
     rightVerge.receiveShadow = true;
     trackSurfaceGroup.add(rightVerge);
+
+    // Vast flat wasteland terrain plane underneath everything, extending to the horizon
+    const worldGroundGeo = new THREE.PlaneGeometry(6000, 10000);
+    const worldUvAttr = worldGroundGeo.attributes.uv;
+    for (let u = 0; u < worldUvAttr.count; u++) {
+        worldUvAttr.setXY(u, worldUvAttr.getX(u) * (6000 / 20.0), worldUvAttr.getY(u) * (10000 / 20.0));
+    }
+    worldUvAttr.needsUpdate = true;
+    const worldGround = new THREE.Mesh(worldGroundGeo, vergeMat);
+    worldGround.rotation.x = -Math.PI / 2;
+    worldGround.position.set(0, -0.15, CONFIG.raceDistance / 2);
+    worldGround.receiveShadow = false;
+    trackSurfaceGroup.add(worldGround);
 }
 
 // Build initial track surface along active profile
@@ -1126,8 +1140,9 @@ loader.setDRACOLoader(dracoLoader);
 // Environment Scenery Groups
 const forestGroup = new THREE.Group();
 landscapeGroup.add(forestGroup);
-const backgroundForestGroup = new THREE.Group();
-landscapeGroup.add(backgroundForestGroup);
+const distantHillsGroup = new THREE.Group();
+landscapeGroup.add(distantHillsGroup);
+const backgroundForestGroup = distantHillsGroup;
 const gravesGroup = new THREE.Group();
 landscapeGroup.add(gravesGroup);
 const rocksGroup = new THREE.Group();
@@ -1635,28 +1650,27 @@ function buildHauntedForestCorridor(treeTemplates) {
         return false;
     }
 
-    // Creepy tree corridor extending back into the distance:
-    // Range extends well ahead of start line (-800m) and past the finish line (+1200m).
-    // Multiple layered depth rows per side create a dense, organic haunted woodland.
-    const minZ = -800;
-    const maxZ = CONFIG.raceDistance + 1200;
-    const stepZ = 34;
+    // Creepy tree corridor extending along the track:
+    // Halved count down to ~200 trees for open, atmospheric negative space
+    const minZ = -300;
+    const maxZ = CONFIG.raceDistance + 500;
+    const stepZ = 80;
 
     for (let z = minZ; z <= maxZ; z += stepZ) {
         const nearSiding = isNearSiding(z);
 
         for (const side of [-1, 1]) {
-            // Row 1: Foreground corridor verge edge (offset 78m - 142m)
-            if (!nearSiding || Math.random() > 0.4) {
-                if (Math.random() > 0.18) {
+            // Row 1: Foreground corridor verge edge (offset 82m - 148m)
+            if (!nearSiding || Math.random() > 0.45) {
+                if (Math.random() > 0.15) {
                     const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
                     const tree = template.clone();
-                    const scale = 11.5 + Math.random() * 8.0;
-                    const treeZ = z + (Math.random() - 0.5) * 16;
+                    const scale = 12.0 + Math.random() * 8.5;
+                    const treeZ = z + (Math.random() - 0.5) * 26;
                     const pt = getActiveTrackPoint(treeZ);
                     const offset = nearSiding 
-                        ? (128 + Math.random() * 22) 
-                        : (78 + Math.random() * 62);
+                        ? (132 + Math.random() * 24) 
+                        : (82 + Math.random() * 66);
 
                     tree.position.set(
                         pt.x + side * offset * pt.right.x,
@@ -1669,20 +1683,20 @@ function buildHauntedForestCorridor(treeTemplates) {
                         (Math.random() - 0.5) * 0.12
                     );
                     tree.scale.set(scale, scale * (0.88 + Math.random() * 0.24), scale);
-                    tree.castShadow = (offset < 135);
+                    tree.castShadow = (offset < 132);
                     tree.receiveShadow = true;
                     forestGroup.add(tree);
                 }
             }
 
-            // Row 2: Mid spooky woods (offset 142m - 235m)
-            if (Math.random() > 0.22) {
+            // Row 2: Mid spooky woods (offset 150m - 250m)
+            if (Math.random() > 0.28) {
                 const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
                 const tree = template.clone();
-                const scale = 16.0 + Math.random() * 9.0;
-                const treeZ = z + (Math.random() - 0.5) * 20;
+                const scale = 17.5 + Math.random() * 10.5;
+                const treeZ = z + (Math.random() - 0.5) * 32;
                 const pt = getActiveTrackPoint(treeZ);
-                const offset = 142 + Math.random() * 93;
+                const offset = 150 + Math.random() * 100;
 
                 tree.position.set(
                     pt.x + side * offset * pt.right.x,
@@ -1700,14 +1714,14 @@ function buildHauntedForestCorridor(treeTemplates) {
                 forestGroup.add(tree);
             }
 
-            // Row 3: Deep spooky woods (offset 235m - 335m, extending back towards background purple forest)
-            if (Math.random() > 0.28) {
+            // Row 3: Occasional deep accents (offset 255m - 330m, ~16% spawn chance)
+            if (Math.random() > 0.84) {
                 const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
                 const tree = template.clone();
-                const scale = 22.0 + Math.random() * 10.0;
-                const treeZ = z + (Math.random() - 0.5) * 22;
+                const scale = 24.0 + Math.random() * 12.0;
+                const treeZ = z + (Math.random() - 0.5) * 36;
                 const pt = getActiveTrackPoint(treeZ);
-                const offset = 235 + Math.random() * 100;
+                const offset = 255 + Math.random() * 75;
 
                 tree.position.set(
                     pt.x + side * offset * pt.right.x,
@@ -1729,69 +1743,53 @@ function buildHauntedForestCorridor(treeTemplates) {
 }
 
 /**
- * Builds the dense background purple tree forest using THREE.InstancedMesh.
- * Positioned past the creepy trees (offsets 340m to 860m) along the curved track horizon.
- * Renders hundreds of trees in a single GPU draw call for silky 60 FPS performance.
+ * Builds distant rolling rounded hills along the track horizon.
+ * Replaces the purple trees with gentle, natural mounds silhouetted against the dark purple sky.
  */
-function buildBackgroundPurpleForest(purpleTreeTemplate) {
-    backgroundForestGroup.clear();
-    if (!purpleTreeTemplate || !purpleTreeTemplate.geometry) return;
+const hillGeometry = new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.5);
+const hillMaterial = new THREE.MeshStandardMaterial({
+    map: grassTex,
+    color: 0x342646, // Dark midnight purple-slate wasteland hill tone matching horizon fog
+    roughness: 0.94,
+    metalness: 0.02
+});
 
-    const minZ = -900;
-    const maxZ = CONFIG.raceDistance + 1400;
-    const stepZ = 32;
-    const countZ = Math.ceil((maxZ - minZ) / stepZ) + 1;
-    const maxInstances = countZ * 6; // 3 depth bands * 2 sides
+function buildDistantHills() {
+    distantHillsGroup.clear();
 
-    const instancedMesh = new THREE.InstancedMesh(
-        purpleTreeTemplate.geometry,
-        purpleTreeTemplate.material,
-        maxInstances
-    );
-    instancedMesh.castShadow = false;
-    instancedMesh.receiveShadow = false;
+    // A few rounded hills pushed far back into the distant horizon (offsets 900m to 1350m)
+    const minZ = -500;
+    const maxZ = CONFIG.raceDistance + 700;
+    const stepZ = 380;
 
-    const dummy = new THREE.Object3D();
-    let instanceIdx = 0;
-
-    const bands = [
-        { minOff: 340, maxOff: 480, minScale: 28, maxScale: 44, prob: 0.85 },
-        { minOff: 480, maxOff: 650, minScale: 38, maxScale: 60, prob: 0.82 },
-        { minOff: 650, maxOff: 860, minScale: 52, maxScale: 76, prob: 0.78 }
-    ];
-
-    for (let i = 0; i < countZ; i++) {
-        const baseZ = minZ + i * stepZ;
+    for (let z = minZ; z <= maxZ; z += stepZ) {
         for (const side of [-1, 1]) {
-            for (const band of bands) {
-                if (Math.random() > band.prob) continue;
-                const treeZ = baseZ + (Math.random() - 0.5) * (stepZ * 0.95);
-                const pt = getActiveTrackPoint(treeZ);
-                const offset = band.minOff + Math.random() * (band.maxOff - band.minOff);
-                const scale = band.minScale + Math.random() * (band.maxScale - band.minScale);
-                const scaleY = scale * (0.90 + Math.random() * 0.22);
+            // ~50% chance per side per step creates ~10 - 14 gentle horizon mounds
+            if (Math.random() > 0.50) {
+                const hill = new THREE.Mesh(hillGeometry, hillMaterial);
+                const hillZ = z + (Math.random() - 0.5) * 160;
+                const pt = getActiveTrackPoint(hillZ);
+                const offset = 900 + Math.random() * 450; // Pushed far back into the distance
 
-                const posX = pt.x + side * offset * pt.right.x;
-                const posZ = pt.z + side * offset * pt.right.z;
+                const rx = 320 + Math.random() * 220; // 320m - 540m broad radius
+                const rz = 320 + Math.random() * 220;
+                const ry = 75 + Math.random() * 75;   // 75m - 150m gentle rounded height
 
-                dummy.position.set(posX, 0, posZ);
-                dummy.rotation.set(
-                    (Math.random() - 0.5) * 0.08,
-                    Math.random() * Math.PI * 2,
-                    (Math.random() - 0.5) * 0.08
+                hill.position.set(
+                    pt.x + side * offset * pt.right.x,
+                    -2.0, // Sunk slightly to ensure the base edge embeds seamlessly into the ground
+                    pt.z + side * offset * pt.right.z
                 );
-                dummy.scale.set(scale, scaleY, scale);
-                dummy.updateMatrix();
-
-                instancedMesh.setMatrixAt(instanceIdx++, dummy.matrix);
+                hill.rotation.y = Math.random() * Math.PI * 2;
+                hill.scale.set(rx, ry, rz);
+                hill.castShadow = false;
+                hill.receiveShadow = false;
+                distantHillsGroup.add(hill);
             }
         }
     }
-
-    instancedMesh.count = instanceIdx;
-    instancedMesh.instanceMatrix.needsUpdate = true;
-    backgroundForestGroup.add(instancedMesh);
 }
+buildDistantHills();
 
 function buildTracksideGraves(graveRoot) {
     gravesGroup.clear();
@@ -2005,9 +2003,9 @@ function buildRoadsideProps(jackTemplate) {
 function rebuildTrackLandscape() {
     buildTrackSurface();
     buildTrackSidings();
+    buildDistantHills();
     if (MonsterModelManager.ready) {
         buildHauntedForestCorridor(MonsterModelManager.treeTemplates);
-        buildBackgroundPurpleForest(MonsterModelManager.purpleTreeTemplate);
         buildTracksideGraves(MonsterModelManager.graveRoot);
         buildTracksideRocks(MonsterModelManager.rockTemplates);
         buildRoadsideProps(MonsterModelManager.jackTemplate);
@@ -2180,7 +2178,6 @@ const MonsterModelManager = {
     _cache: new Array(8).fill(null),
     _failed: new Array(8).fill(false),
     treeTemplates: [],
-    purpleTreeTemplate: null,
     graveRoot: null,
     rockTemplates: [],
     jackTemplate: null,
@@ -2200,7 +2197,7 @@ const MonsterModelManager = {
         if (startBtn) { startBtn.disabled = true; startBtn.style.cursor = 'not-allowed'; }
 
         let loadedCount = 0;
-        const totalItems = 16;
+        const totalItems = 15;
 
         const updateLoadingProgress = () => {
             loadedCount++;
@@ -2576,49 +2573,7 @@ const MonsterModelManager = {
             );
         });
 
-        // 9. Preload Environment purple-trees.glb (Background purple forest for distant horizon depth)
-        const purpleTreePromise = new Promise((resolve) => {
-            loader.load(
-                'models/purple-trees.glb',
-                (gltf) => {
-                    let extractedMesh = null;
-                    gltf.scene.traverse((child) => {
-                        if (child.isMesh && !extractedMesh) {
-                            extractedMesh = child;
-                        }
-                    });
-
-                    if (extractedMesh) {
-                        const geo = extractedMesh.geometry.clone();
-                        geo.computeBoundingBox();
-                        const b = geo.boundingBox;
-                        const cx = (b.min.x + b.max.x) / 2;
-                        const cz = (b.min.z + b.max.z) / 2;
-                        const minY = b.min.y;
-                        geo.translate(-cx, -minY, -cz);
-
-                        const mat = extractedMesh.material.clone();
-                        mat.side = THREE.DoubleSide;
-                        mat.roughness = 0.82;
-                        mat.metalness = 0.05;
-
-                        this.purpleTreeTemplate = { geometry: geo, material: mat };
-                        buildBackgroundPurpleForest(this.purpleTreeTemplate);
-                    }
-
-                    updateLoadingProgress();
-                    resolve();
-                },
-                undefined,
-                (err) => {
-                    console.warn('[MonsterModelManager] Failed to load models/purple-trees.glb:', err);
-                    updateLoadingProgress();
-                    resolve();
-                }
-            );
-        });
-
-        // 10. Preload Creepster font so countdown numbers render immediately in Creepster font
+        // 9. Preload Creepster font so countdown numbers render immediately in Creepster font
         const fontPromise = (typeof document !== 'undefined' && document.fonts && document.fonts.load)
             ? document.fonts.load("200px 'Creepster'").catch(e => console.warn("Creepster preload warning:", e))
             : Promise.resolve();
@@ -2626,7 +2581,6 @@ const MonsterModelManager = {
         return Promise.all([
             ...racerPromises,
             treePromise,
-            purpleTreePromise,
             gravePromise,
             rockPromise,
             jackPromise,
@@ -2678,13 +2632,8 @@ const MonsterModelManager = {
             }
             this._failed[i] = false;
         }
-        if (this.purpleTreeTemplate) {
-            this.purpleTreeTemplate.geometry?.dispose();
-            this.purpleTreeTemplate.material?.dispose();
-            this.purpleTreeTemplate = null;
-        }
-        if (typeof backgroundForestGroup !== 'undefined' && backgroundForestGroup) {
-            backgroundForestGroup.clear();
+        if (typeof distantHillsGroup !== 'undefined' && distantHillsGroup) {
+            distantHillsGroup.clear();
         }
         this.ready = false;
     }

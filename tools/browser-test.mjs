@@ -265,7 +265,7 @@ async function runBrowserTests() {
                 isCountingDown,
                 racerScale: CONFIG.racerScale,
                 forestTreesCount: forestGroup ? forestGroup.children.length : 0,
-                purpleTreesCount: backgroundForestGroup && backgroundForestGroup.children[0] ? backgroundForestGroup.children[0].count : 0,
+                distantHillsCount: typeof distantHillsGroup !== 'undefined' && distantHillsGroup ? distantHillsGroup.children.length : 0,
                 gravesCount: gravesGroup ? gravesGroup.children.length : 0,
                 racers: ducks.map(d => ({
                     id: d.id,
@@ -281,15 +281,12 @@ async function runBrowserTests() {
         `);
 
         console.log(`✓ Initial raceState: ${preRaceAudit.raceState} (racerScale: ${preRaceAudit.racerScale})`);
-        console.log(`✓ Environment scenery: ${preRaceAudit.forestTreesCount} creepy trees, ${preRaceAudit.purpleTreesCount} background purple trees, ${preRaceAudit.gravesCount} gravestones`);
+        console.log(`✓ Environment scenery: ${preRaceAudit.forestTreesCount} creepy trees, ${preRaceAudit.distantHillsCount} distant hills, ${preRaceAudit.gravesCount} gravestones`);
         if (preRaceAudit.raceState !== 'READY') {
             throw new Error(`Expected raceState READY on start screen, got ${preRaceAudit.raceState}`);
         }
         if (preRaceAudit.forestTreesCount === 0) {
             throw new Error('Haunted forest corridor has 0 trees!');
-        }
-        if (preRaceAudit.purpleTreesCount === 0) {
-            throw new Error('Background purple tree forest has 0 instances!');
         }
 
         console.log('\nInspecting 8 Live Arcade Racers on Start Screen:');

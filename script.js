@@ -1126,6 +1126,8 @@ loader.setDRACOLoader(dracoLoader);
 // Environment Scenery Groups
 const forestGroup = new THREE.Group();
 landscapeGroup.add(forestGroup);
+const backgroundForestGroup = new THREE.Group();
+landscapeGroup.add(backgroundForestGroup);
 const gravesGroup = new THREE.Group();
 landscapeGroup.add(gravesGroup);
 const rocksGroup = new THREE.Group();
@@ -1625,58 +1627,170 @@ function buildHauntedForestCorridor(treeTemplates) {
     forestGroup.clear();
     if (!treeTemplates || treeTemplates.length === 0) return;
 
-    // Helper: place trees safely clear of track siding advertising boards (at |x|=95, z=0, 120, 240, ...)
-    function getSidingClearTreeOffset(treeZ) {
-        let nearSiding = false;
+    // Helper: detect if a Z coordinate is within range of a track siding board
+    function isNearSiding(z) {
         for (let sz = 0; sz <= CONFIG.raceDistance; sz += SIDING_INTERVAL) {
-            if (Math.abs(treeZ - sz) < 50) {
-                nearSiding = true;
-                break;
+            if (Math.abs(z - sz) < 48) return true;
+        }
+        return false;
+    }
+
+    // Creepy tree corridor extending back into the distance:
+    // Range extends well ahead of start line (-800m) and past the finish line (+1200m).
+    // Multiple layered depth rows per side create a dense, organic haunted woodland.
+    const minZ = -800;
+    const maxZ = CONFIG.raceDistance + 1200;
+    const stepZ = 34;
+
+    for (let z = minZ; z <= maxZ; z += stepZ) {
+        const nearSiding = isNearSiding(z);
+
+        for (const side of [-1, 1]) {
+            // Row 1: Foreground corridor verge edge (offset 78m - 142m)
+            if (!nearSiding || Math.random() > 0.4) {
+                if (Math.random() > 0.18) {
+                    const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
+                    const tree = template.clone();
+                    const scale = 11.5 + Math.random() * 8.0;
+                    const treeZ = z + (Math.random() - 0.5) * 16;
+                    const pt = getActiveTrackPoint(treeZ);
+                    const offset = nearSiding 
+                        ? (128 + Math.random() * 22) 
+                        : (78 + Math.random() * 62);
+
+                    tree.position.set(
+                        pt.x + side * offset * pt.right.x,
+                        0,
+                        pt.z + side * offset * pt.right.z
+                    );
+                    tree.rotation.set(
+                        (Math.random() - 0.5) * 0.12,
+                        Math.random() * Math.PI * 2,
+                        (Math.random() - 0.5) * 0.12
+                    );
+                    tree.scale.set(scale, scale * (0.88 + Math.random() * 0.24), scale);
+                    tree.castShadow = (offset < 135);
+                    tree.receiveShadow = true;
+                    forestGroup.add(tree);
+                }
+            }
+
+            // Row 2: Mid spooky woods (offset 142m - 235m)
+            if (Math.random() > 0.22) {
+                const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
+                const tree = template.clone();
+                const scale = 16.0 + Math.random() * 9.0;
+                const treeZ = z + (Math.random() - 0.5) * 20;
+                const pt = getActiveTrackPoint(treeZ);
+                const offset = 142 + Math.random() * 93;
+
+                tree.position.set(
+                    pt.x + side * offset * pt.right.x,
+                    0,
+                    pt.z + side * offset * pt.right.z
+                );
+                tree.rotation.set(
+                    (Math.random() - 0.5) * 0.12,
+                    Math.random() * Math.PI * 2,
+                    (Math.random() - 0.5) * 0.12
+                );
+                tree.scale.set(scale, scale * (0.88 + Math.random() * 0.24), scale);
+                tree.castShadow = false;
+                tree.receiveShadow = true;
+                forestGroup.add(tree);
+            }
+
+            // Row 3: Deep spooky woods (offset 235m - 335m, extending back towards background purple forest)
+            if (Math.random() > 0.28) {
+                const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
+                const tree = template.clone();
+                const scale = 22.0 + Math.random() * 10.0;
+                const treeZ = z + (Math.random() - 0.5) * 22;
+                const pt = getActiveTrackPoint(treeZ);
+                const offset = 235 + Math.random() * 100;
+
+                tree.position.set(
+                    pt.x + side * offset * pt.right.x,
+                    0,
+                    pt.z + side * offset * pt.right.z
+                );
+                tree.rotation.set(
+                    (Math.random() - 0.5) * 0.14,
+                    Math.random() * Math.PI * 2,
+                    (Math.random() - 0.5) * 0.14
+                );
+                tree.scale.set(scale, scale * (0.88 + Math.random() * 0.24), scale);
+                tree.castShadow = false;
+                tree.receiveShadow = false;
+                forestGroup.add(tree);
             }
         }
-        if (nearSiding) {
-            // Place tree safely in deep forest behind the siding board (at least 35m behind siding at |x|=95)
-            return 130 + Math.random() * 85;
-        } else {
-            // In open gaps between sidings, trees can grow naturally from verge edge outward
-            return 82 + Math.random() * 135;
+    }
+}
+
+/**
+ * Builds the dense background purple tree forest using THREE.InstancedMesh.
+ * Positioned past the creepy trees (offsets 340m to 860m) along the curved track horizon.
+ * Renders hundreds of trees in a single GPU draw call for silky 60 FPS performance.
+ */
+function buildBackgroundPurpleForest(purpleTreeTemplate) {
+    backgroundForestGroup.clear();
+    if (!purpleTreeTemplate || !purpleTreeTemplate.geometry) return;
+
+    const minZ = -900;
+    const maxZ = CONFIG.raceDistance + 1400;
+    const stepZ = 32;
+    const countZ = Math.ceil((maxZ - minZ) / stepZ) + 1;
+    const maxInstances = countZ * 6; // 3 depth bands * 2 sides
+
+    const instancedMesh = new THREE.InstancedMesh(
+        purpleTreeTemplate.geometry,
+        purpleTreeTemplate.material,
+        maxInstances
+    );
+    instancedMesh.castShadow = false;
+    instancedMesh.receiveShadow = false;
+
+    const dummy = new THREE.Object3D();
+    let instanceIdx = 0;
+
+    const bands = [
+        { minOff: 340, maxOff: 480, minScale: 28, maxScale: 44, prob: 0.85 },
+        { minOff: 480, maxOff: 650, minScale: 38, maxScale: 60, prob: 0.82 },
+        { minOff: 650, maxOff: 860, minScale: 52, maxScale: 76, prob: 0.78 }
+    ];
+
+    for (let i = 0; i < countZ; i++) {
+        const baseZ = minZ + i * stepZ;
+        for (const side of [-1, 1]) {
+            for (const band of bands) {
+                if (Math.random() > band.prob) continue;
+                const treeZ = baseZ + (Math.random() - 0.5) * (stepZ * 0.95);
+                const pt = getActiveTrackPoint(treeZ);
+                const offset = band.minOff + Math.random() * (band.maxOff - band.minOff);
+                const scale = band.minScale + Math.random() * (band.maxScale - band.minScale);
+                const scaleY = scale * (0.90 + Math.random() * 0.22);
+
+                const posX = pt.x + side * offset * pt.right.x;
+                const posZ = pt.z + side * offset * pt.right.z;
+
+                dummy.position.set(posX, 0, posZ);
+                dummy.rotation.set(
+                    (Math.random() - 0.5) * 0.08,
+                    Math.random() * Math.PI * 2,
+                    (Math.random() - 0.5) * 0.08
+                );
+                dummy.scale.set(scale, scaleY, scale);
+                dummy.updateMatrix();
+
+                instancedMesh.setMatrixAt(instanceIdx++, dummy.matrix);
+            }
         }
     }
 
-    for (let z = -320; z < CONFIG.raceDistance + 320; z += 96) {
-        if (Math.random() > 0.15) {
-            const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
-            const tree = template.clone();
-            const scale = 11.5 + Math.random() * 8.5;
-            const treeZ = z + (Math.random() - 0.5) * 14;
-            const pt = getActiveTrackPoint(treeZ);
-            const offset = getSidingClearTreeOffset(treeZ);
-            tree.position.set(
-                pt.x - offset * pt.right.x,
-                0,
-                pt.z - offset * pt.right.z
-            );
-            tree.rotation.y = Math.random() * Math.PI * 2;
-            tree.scale.set(scale, scale * (0.9 + Math.random() * 0.3), scale);
-            forestGroup.add(tree);
-        }
-        if (Math.random() > 0.15) {
-            const template = treeTemplates[Math.floor(Math.random() * treeTemplates.length)];
-            const tree = template.clone();
-            const scale = 11.5 + Math.random() * 8.5;
-            const treeZ = z + (Math.random() - 0.5) * 14;
-            const pt = getActiveTrackPoint(treeZ);
-            const offset = getSidingClearTreeOffset(treeZ);
-            tree.position.set(
-                pt.x + offset * pt.right.x,
-                0,
-                pt.z + offset * pt.right.z
-            );
-            tree.rotation.y = Math.random() * Math.PI * 2;
-            tree.scale.set(scale, scale * (0.9 + Math.random() * 0.3), scale);
-            forestGroup.add(tree);
-        }
-    }
+    instancedMesh.count = instanceIdx;
+    instancedMesh.instanceMatrix.needsUpdate = true;
+    backgroundForestGroup.add(instancedMesh);
 }
 
 function buildTracksideGraves(graveRoot) {
@@ -1893,6 +2007,7 @@ function rebuildTrackLandscape() {
     buildTrackSidings();
     if (MonsterModelManager.ready) {
         buildHauntedForestCorridor(MonsterModelManager.treeTemplates);
+        buildBackgroundPurpleForest(MonsterModelManager.purpleTreeTemplate);
         buildTracksideGraves(MonsterModelManager.graveRoot);
         buildTracksideRocks(MonsterModelManager.rockTemplates);
         buildRoadsideProps(MonsterModelManager.jackTemplate);
@@ -2065,6 +2180,7 @@ const MonsterModelManager = {
     _cache: new Array(8).fill(null),
     _failed: new Array(8).fill(false),
     treeTemplates: [],
+    purpleTreeTemplate: null,
     graveRoot: null,
     rockTemplates: [],
     jackTemplate: null,
@@ -2084,7 +2200,7 @@ const MonsterModelManager = {
         if (startBtn) { startBtn.disabled = true; startBtn.style.cursor = 'not-allowed'; }
 
         let loadedCount = 0;
-        const totalItems = 15;
+        const totalItems = 16;
 
         const updateLoadingProgress = () => {
             loadedCount++;
@@ -2460,7 +2576,49 @@ const MonsterModelManager = {
             );
         });
 
-        // 9. Preload Creepster font so countdown numbers render immediately in Creepster font
+        // 9. Preload Environment purple-trees.glb (Background purple forest for distant horizon depth)
+        const purpleTreePromise = new Promise((resolve) => {
+            loader.load(
+                'models/purple-trees.glb',
+                (gltf) => {
+                    let extractedMesh = null;
+                    gltf.scene.traverse((child) => {
+                        if (child.isMesh && !extractedMesh) {
+                            extractedMesh = child;
+                        }
+                    });
+
+                    if (extractedMesh) {
+                        const geo = extractedMesh.geometry.clone();
+                        geo.computeBoundingBox();
+                        const b = geo.boundingBox;
+                        const cx = (b.min.x + b.max.x) / 2;
+                        const cz = (b.min.z + b.max.z) / 2;
+                        const minY = b.min.y;
+                        geo.translate(-cx, -minY, -cz);
+
+                        const mat = extractedMesh.material.clone();
+                        mat.side = THREE.DoubleSide;
+                        mat.roughness = 0.82;
+                        mat.metalness = 0.05;
+
+                        this.purpleTreeTemplate = { geometry: geo, material: mat };
+                        buildBackgroundPurpleForest(this.purpleTreeTemplate);
+                    }
+
+                    updateLoadingProgress();
+                    resolve();
+                },
+                undefined,
+                (err) => {
+                    console.warn('[MonsterModelManager] Failed to load models/purple-trees.glb:', err);
+                    updateLoadingProgress();
+                    resolve();
+                }
+            );
+        });
+
+        // 10. Preload Creepster font so countdown numbers render immediately in Creepster font
         const fontPromise = (typeof document !== 'undefined' && document.fonts && document.fonts.load)
             ? document.fonts.load("200px 'Creepster'").catch(e => console.warn("Creepster preload warning:", e))
             : Promise.resolve();
@@ -2468,6 +2626,7 @@ const MonsterModelManager = {
         return Promise.all([
             ...racerPromises,
             treePromise,
+            purpleTreePromise,
             gravePromise,
             rockPromise,
             jackPromise,
@@ -2518,6 +2677,14 @@ const MonsterModelManager = {
                 this._cache[i] = null;
             }
             this._failed[i] = false;
+        }
+        if (this.purpleTreeTemplate) {
+            this.purpleTreeTemplate.geometry?.dispose();
+            this.purpleTreeTemplate.material?.dispose();
+            this.purpleTreeTemplate = null;
+        }
+        if (typeof backgroundForestGroup !== 'undefined' && backgroundForestGroup) {
+            backgroundForestGroup.clear();
         }
         this.ready = false;
     }

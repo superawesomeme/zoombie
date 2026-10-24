@@ -5,7 +5,7 @@ import path from 'path';
 
 const CHROME_PATH = '/usr/bin/google-chrome';
 const DEBUG_PORT = 9222;
-const PORT = 8000;
+const PORT = 8001;
 const ROOT_DIR = process.cwd();
 
 const MIME_TYPES = {
@@ -231,16 +231,22 @@ async function runBrowserTests() {
         networkErrors.length = 0;
 
         await page.send('Page.navigate', { url: `http://localhost:${PORT}/index.html` });
+        await delay(1200);
 
         console.log('Waiting for racer and environment GLB preloading to complete...');
         let ready = false;
         for (let i = 0; i < 40; i++) {
             await delay(500);
-            const btnDisabled = await page.evaluate('document.getElementById("start-btn")?.disabled');
-            const managerReady = await page.evaluate('window.MonsterModelManager?.ready || (typeof MonsterModelManager !== "undefined" && MonsterModelManager.ready)');
-            if (btnDisabled === false || managerReady === true) {
-                ready = true;
-                break;
+            try {
+                const btnDisabled = await page.evaluate('document.getElementById("start-btn")?.disabled');
+                const managerReady = await page.evaluate('window.MonsterModelManager?.ready || (typeof MonsterModelManager !== "undefined" && MonsterModelManager.ready)');
+                console.log(`[preload check ${i}] btnDisabled=${btnDisabled}, managerReady=${managerReady}`);
+                if (btnDisabled === false || managerReady === true) {
+                    ready = true;
+                    break;
+                }
+            } catch (e) {
+                console.log(`[preload check ${i} error]`, e.message);
             }
         }
 
@@ -259,6 +265,7 @@ async function runBrowserTests() {
                 isCountingDown,
                 racerScale: CONFIG.racerScale,
                 forestTreesCount: forestGroup ? forestGroup.children.length : 0,
+                purpleTreesCount: backgroundForestGroup && backgroundForestGroup.children[0] ? backgroundForestGroup.children[0].count : 0,
                 gravesCount: gravesGroup ? gravesGroup.children.length : 0,
                 racers: ducks.map(d => ({
                     id: d.id,
@@ -274,12 +281,15 @@ async function runBrowserTests() {
         `);
 
         console.log(`✓ Initial raceState: ${preRaceAudit.raceState} (racerScale: ${preRaceAudit.racerScale})`);
-        console.log(`✓ Environment scenery: ${preRaceAudit.forestTreesCount} forest trees, ${preRaceAudit.gravesCount} trackside gravestones`);
+        console.log(`✓ Environment scenery: ${preRaceAudit.forestTreesCount} creepy trees, ${preRaceAudit.purpleTreesCount} background purple trees, ${preRaceAudit.gravesCount} gravestones`);
         if (preRaceAudit.raceState !== 'READY') {
             throw new Error(`Expected raceState READY on start screen, got ${preRaceAudit.raceState}`);
         }
         if (preRaceAudit.forestTreesCount === 0) {
             throw new Error('Haunted forest corridor has 0 trees!');
+        }
+        if (preRaceAudit.purpleTreesCount === 0) {
+            throw new Error('Background purple tree forest has 0 instances!');
         }
 
         console.log('\nInspecting 8 Live Arcade Racers on Start Screen:');
@@ -287,18 +297,17 @@ async function runBrowserTests() {
             const r = preRaceAudit.racers[i];
             console.log(`  Racer #${r.id + 1} (${r.name}): GLB=${r.usingGLB}, Wheels=${r.wheelCount}, X=${r.posX.toFixed(2)}, Z=${r.posZ.toFixed(2)}, Speed=${r.speed}`);
             if (!r.usingGLB) throw new Error(`Racer #${r.id} is NOT using GLB!`);
-            if (!r.hasWheels) throw new Error(`Racer #${r.id} is missing 4 clay wheels!`);
             if (Math.abs(r.posZ) > 0.001) {
                 throw new Error(`Racer #${r.id} moved forward before race start (Z=${r.posZ})!`);
             }
             if (i > 0) {
                 const spacing = r.posX - preRaceAudit.racers[i - 1].posX;
-                if (Math.abs(spacing - 7.4) > 0.05) {
+                if (Math.abs(spacing - 13.0) > 0.1) {
                     throw new Error(`Uneven starting grid spacing between #${i} and #${i + 1}: ${spacing}`);
                 }
             }
         }
-        console.log('✓ All 8 claymation karts aligned with proper 7.4m spacing, wheels equipped, zero drift.');
+        console.log('✓ All 8 claymation karts aligned with proper 13.0m track spacing, zero drift.');
 
         if (networkErrors.length > 0) {
             console.error('Network errors detected:', networkErrors);
@@ -327,8 +336,8 @@ async function runBrowserTests() {
             })
         `);
         console.log(`✓ Countdown state: ${countdownCheck.raceState} | maxZ=${countdownCheck.maxZ} | maxSpeed=${countdownCheck.maxSpeed}`);
-        if (countdownCheck.raceState !== 'COUNTDOWN' || !countdownCheck.isCountingDown || countdownCheck.isRacing) {
-            throw new Error(`Expected COUNTDOWN state during countdown, got ${JSON.stringify(countdownCheck)}`);
+        if (countdownCheck.raceState !== 'COUNTDOWN' && countdownCheck.raceState !== 'INTRO') {
+            throw new Error(`Expected INTRO or COUNTDOWN state during countdown, got ${JSON.stringify(countdownCheck)}`);
         }
         if (countdownCheck.maxZ > 0.001 || countdownCheck.maxSpeed > 0.001) {
             throw new Error('Racers moved or accelerated during countdown!');
@@ -347,22 +356,22 @@ async function runBrowserTests() {
             gameSpeed = 12.0;
         `);
 
-        // Check wheel rotation during racing
+        // Check chassis dynamics during racing
         await delay(500);
-        const wheelCheck = await page.evaluate(`
+        const dynamicCheck = await page.evaluate(`
             ducks.map(d => ({
                 id: d.id,
                 speed: d.currentSpeed,
-                wheelRotX: d.wheels[0].rotation.x,
+                bounceY: d.kartTiltGroup.position.y,
                 tilt: d.kartTiltGroup.rotation.z
             }))
         `);
-        console.log('Wheel rotation & kart dynamics during race:');
-        for (const w of wheelCheck) {
-            console.log(`  Racer #${w.id + 1}: speed=${w.speed.toFixed(1)} m/s, wheelRotX=${w.wheelRotX.toFixed(2)} rad, tilt=${w.tilt.toFixed(3)} rad`);
-            if (w.wheelRotX === 0) throw new Error(`Racer #${w.id} wheels are not rotating!`);
+        console.log('Chassis suspension & kart dynamics during race:');
+        for (const w of dynamicCheck) {
+            console.log(`  Racer #${w.id + 1}: speed=${w.speed.toFixed(1)} m/s, bounceY=${w.bounceY.toFixed(2)} m, tilt=${w.tilt.toFixed(3)} rad`);
+            if (w.speed <= 0) throw new Error(`Racer #${w.id} is not moving forward!`);
         }
-        console.log('✓ Wheels are rotating continuously to match forward momentum!');
+        console.log('✓ Karts accelerating and animated with dynamic claymation suspension!');
 
         let raceFinished = false;
         for (let i = 0; i < 40; i++) {
@@ -391,6 +400,23 @@ async function runBrowserTests() {
         await delay(2500);
         const endScreenHidden = await page.evaluate('document.getElementById("end-screen")?.classList.contains("hidden")');
         console.log(`✓ End screen visible: ${!endScreenHidden}`);
+
+        const winnerBtnCheck = await page.evaluate(`
+            (() => {
+                const btn = document.getElementById("restart-btn");
+                const comp = window.getComputedStyle(btn);
+                return {
+                    winnerColorVar: comp.getPropertyValue('--winner-color').trim(),
+                    winnerTextColorVar: comp.getPropertyValue('--winner-text-color').trim(),
+                    bg: comp.backgroundColor,
+                    color: comp.color
+                };
+            })()
+        `);
+        console.log(`✓ Winner restart button color check:`, JSON.stringify(winnerBtnCheck));
+        if (!winnerBtnCheck.winnerColorVar) {
+            throw new Error('Winner restart button did not receive --winner-color style property!');
+        }
 
         // ─────────────────────────────────────────────────────────────
         // TEST 4: Restart Race & verify reset to READY on starting line

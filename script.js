@@ -3369,6 +3369,10 @@ raceSelect.addEventListener('change', (e) => {
     const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
     if (session) {
         session.currentRaceIndex = currentRaceIndex;
+        const nextStartTickets = session.currentNextTickets ? [...session.currentNextTickets] : [1, 1, 1, 1, 1, 1, 1, 1];
+        session.currentStartTickets = nextStartTickets;
+        session.currentNextTickets = [...nextStartTickets];
+        session.currentOverrides = [false, false, false, false, false, false, false, false];
         session.currentBets = [0, 0, 0, 0, 0, 0, 0, 0];
         session.currentDividends = [0, 0, 0, 0, 0, 0, 0, 0];
         session.betsSubmitted = false;
@@ -3538,6 +3542,10 @@ document.getElementById('restart-btn').addEventListener('click', () => {
 
     if (session) {
         session.currentRaceIndex = currentRaceIndex;
+        const nextStartTickets = session.currentNextTickets ? [...session.currentNextTickets] : [1, 1, 1, 1, 1, 1, 1, 1];
+        session.currentStartTickets = nextStartTickets;
+        session.currentNextTickets = [...nextStartTickets];
+        session.currentOverrides = [false, false, false, false, false, false, false, false];
         session.currentBets = [0, 0, 0, 0, 0, 0, 0, 0];
         session.currentDividends = [0, 0, 0, 0, 0, 0, 0, 0];
         session.betsSubmitted = false;
@@ -4097,6 +4105,9 @@ function animate() {
                     prizeSplitPct: splitPct,
                     roundingStep: roundStep,
                     ticketsByRacer: Array.isArray(session.currentBets) ? [...session.currentBets] : [0, 0, 0, 0, 0, 0, 0, 0],
+                    startTicketsByRacer: Array.isArray(session.currentStartTickets) ? [...session.currentStartTickets] : [1, 1, 1, 1, 1, 1, 1, 1],
+                    nextTicketsByRacer: Array.isArray(session.currentNextTickets) ? [...session.currentNextTickets] : [1, 1, 1, 1, 1, 1, 1, 1],
+                    overridesByRacer: Array.isArray(session.currentOverrides) ? [...session.currentOverrides] : [false, false, false, false, false, false, false, false],
                     totalTickets: totalTickets,
                     grossPot: grossPot,
                     initialPrizePool: initialPrizePool,

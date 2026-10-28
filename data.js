@@ -133,7 +133,8 @@ const BROADCAST_CHANNEL_NAME = 'zoombie_race_channel';
 const DEFAULT_TOTE_SETTINGS = {
     ticketPrice: 1.00,
     prizeSplitPct: 50,
-    roundingStep: 0.50
+    roundingStep: 0.50,
+    startingFloat: 0.00
 };
 
 /**
@@ -205,6 +206,15 @@ function loadSessionData() {
                 if (!Array.isArray(parsed.currentBets) || parsed.currentBets.length !== 8) {
                     parsed.currentBets = [0, 0, 0, 0, 0, 0, 0, 0];
                 }
+                if (!Array.isArray(parsed.currentStartTickets) || parsed.currentStartTickets.length !== 8) {
+                    parsed.currentStartTickets = [1, 1, 1, 1, 1, 1, 1, 1];
+                }
+                if (!Array.isArray(parsed.currentNextTickets) || parsed.currentNextTickets.length !== 8) {
+                    parsed.currentNextTickets = [1, 1, 1, 1, 1, 1, 1, 1];
+                }
+                if (!Array.isArray(parsed.currentOverrides) || parsed.currentOverrides.length !== 8) {
+                    parsed.currentOverrides = [false, false, false, false, false, false, false, false];
+                }
                 if (!Array.isArray(parsed.currentDividends) || parsed.currentDividends.length !== 8) {
                     parsed.currentDividends = [0, 0, 0, 0, 0, 0, 0, 0];
                 }
@@ -213,6 +223,8 @@ function loadSessionData() {
                 }
                 if (!parsed.settings) {
                     parsed.settings = { ...DEFAULT_TOTE_SETTINGS };
+                } else if (typeof parsed.settings.startingFloat !== 'number') {
+                    parsed.settings.startingFloat = 0.00;
                 }
                 return parsed;
             }
@@ -228,6 +240,9 @@ function loadSessionData() {
         toteState: "BETTING",
         settings: { ...DEFAULT_TOTE_SETTINGS },
         currentBets: [0, 0, 0, 0, 0, 0, 0, 0],
+        currentStartTickets: [1, 1, 1, 1, 1, 1, 1, 1],
+        currentNextTickets: [1, 1, 1, 1, 1, 1, 1, 1],
+        currentOverrides: [false, false, false, false, false, false, false, false],
         currentDividends: [0, 0, 0, 0, 0, 0, 0, 0],
         betsSubmitted: false,
         history: []
@@ -259,6 +274,9 @@ function resetSessionData() {
         toteState: "BETTING",
         settings: preservedSettings,
         currentBets: [0, 0, 0, 0, 0, 0, 0, 0],
+        currentStartTickets: [1, 1, 1, 1, 1, 1, 1, 1],
+        currentNextTickets: [1, 1, 1, 1, 1, 1, 1, 1],
+        currentOverrides: [false, false, false, false, false, false, false, false],
         currentDividends: [0, 0, 0, 0, 0, 0, 0, 0],
         betsSubmitted: false,
         history: []

@@ -12,6 +12,11 @@
     let lastProjectorHeartbeat = 0;
     let projectorIsReady = false;
 
+    // File System Access API & Ledger state
+    let ledgerFileHandle = null;
+    let ledgerStatus = 'none'; // 'none' | 'saved' | 'saving' | 'pending' | 'error'
+    let hasLedgerEverBeenCreated = false;
+
     // Lane colours matching 3D scene (Vampire, Pumpkin, Mummy, Monster, Ghost, Witch, Werewolf, Skeleton)
     const LANE_COLORS = [
         0xF42941, // Red
@@ -96,6 +101,7 @@
                 if (msg.raceState === 'FINISHED' && session.toteState !== 'FINISHED') {
                     session = loadSessionData();
                     renderAll();
+                    triggerAutoSaveLedger();
                 } else if (msg.raceState === 'READY' && session.toteState === 'RACING') {
                     session = loadSessionData();
                     renderAll();
@@ -105,6 +111,7 @@
             case 'RACE_FINISHED':
                 session = loadSessionData();
                 renderAll();
+                triggerAutoSaveLedger();
                 break;
 
             case 'PROJECTOR_RACE_CHANGED':
@@ -233,9 +240,33 @@
         const tbody = document.getElementById('betting-tbody');
         if (!tbody) return;
 
+        if (!Array.isArray(session.currentStartTickets) || session.currentStartTickets.length !== 8) {
+            session.currentStartTickets = [1, 1, 1, 1, 1, 1, 1, 1];
+        }
+        if (!Array.isArray(session.currentNextTickets) || session.currentNextTickets.length !== 8) {
+            session.currentNextTickets = [1, 1, 1, 1, 1, 1, 1, 1];
+        }
+        if (!Array.isArray(session.currentOverrides) || session.currentOverrides.length !== 8) {
+            session.currentOverrides = [false, false, false, false, false, false, false, false];
+        }
+        if (!Array.isArray(session.currentBets) || session.currentBets.length !== 8) {
+            session.currentBets = [0, 0, 0, 0, 0, 0, 0, 0];
+        }
+
         const race = storedRaces[session.currentRaceIndex] || DEFAULT_RACES[0];
         const racerNames = race.racers || race.ducks || [];
+
+        // Synchronise calculated tickets for non-overridden rows
+        for (let i = 0; i < 8; i++) {
+            if (!session.currentOverrides[i]) {
+                const sT = parseInt(session.currentStartTickets[i], 10) || 0;
+                const nT = parseInt(session.currentNextTickets[i], 10) || 0;
+                session.currentBets[i] = Math.max(0, nT - sT);
+            }
+        }
+
         const calc = calculateToteDividends(session.currentBets, session.settings);
+        session.currentDividends = calc.dividends;
 
         // Update Summary Strip
         const totalTicketsEl = document.getElementById('stat-total-tickets');
@@ -263,6 +294,9 @@
             const col = getLaneColor(i);
             const name = racerNames[i] || `Zoombie ${i + 1}`;
             const mType = (typeof MONSTER_TYPES !== 'undefined' && MONSTER_TYPES[i]) ? MONSTER_TYPES[i] : '';
+            const sTicket = session.currentStartTickets[i];
+            const nTicket = session.currentNextTickets[i];
+            const isOverride = Boolean(session.currentOverrides[i]);
             const tickets = parseInt(session.currentBets[i], 10) || 0;
             const dividend = calc.dividends[i] || 0;
             const payout = tickets * dividend;
@@ -283,7 +317,18 @@
                     </div>
                 </td>
                 <td>
-                    <input type="number" min="0" step="1" class="ticket-input" data-lane="${i}" value="${tickets}" ${isLocked ? 'disabled' : ''}>
+                    <input type="number" min="0" step="1" class="ticket-num-input start-ticket-input" data-lane="${i}" value="${sTicket}" ${isLocked ? 'disabled' : ''}>
+                </td>
+                <td>
+                    <input type="number" min="0" step="1" class="ticket-num-input next-ticket-input" data-lane="${i}" value="${nTicket}" ${isLocked ? 'disabled' : ''}>
+                </td>
+                <td style="text-align: center;">
+                    <div class="ticket-override-wrap">
+                        <input type="checkbox" class="ticket-override-cb" data-lane="${i}" ${isOverride ? 'checked' : ''} ${isLocked ? 'disabled' : ''} title="Manual ticket override">
+                    </div>
+                </td>
+                <td>
+                    <input type="number" min="0" step="1" class="ticket-num-input ticket-input" data-lane="${i}" value="${tickets}" ${isLocked || !isOverride ? 'readonly' : ''} ${isLocked ? 'disabled' : ''}>
                 </td>
                 <td id="cell-div-${i}">
                     ${divText}
@@ -298,42 +343,108 @@
             tbody.appendChild(tr);
         }
 
-        // Bind input events for ticket inputs
-        const inputs = tbody.querySelectorAll('.ticket-input');
-        inputs.forEach(inp => {
+        // Live recalculation helper across all rows
+        function updateLiveCalculations() {
+            const newCalc = calculateToteDividends(session.currentBets, session.settings);
+            session.currentDividends = newCalc.dividends;
+            saveSessionData(session);
+            markLedgerPending();
+
+            if (totalTicketsEl) totalTicketsEl.textContent = newCalc.totalTickets;
+            if (grossPotEl) grossPotEl.textContent = `£${newCalc.grossPot.toFixed(2)}`;
+            if (prizePoolEl) prizePoolEl.textContent = `£${newCalc.prizePool.toFixed(2)}`;
+            if (clubSplitEl) clubSplitEl.textContent = `£${(newCalc.grossPot - newCalc.prizePool).toFixed(2)}`;
+
+            for (let k = 0; k < 8; k++) {
+                const t = parseInt(session.currentBets[k], 10) || 0;
+                const d = newCalc.dividends[k] || 0;
+                const p = t * d;
+                const c = (newCalc.grossPot > 0) ? Math.max(0, newCalc.grossPot - p) : 0;
+
+                const cellDiv = document.getElementById(`cell-div-${k}`);
+                const cellPay = document.getElementById(`cell-pay-${k}`);
+                const cellClub = document.getElementById(`cell-club-${k}`);
+
+                if (cellDiv) {
+                    cellDiv.innerHTML = (t > 0 && d > 0)
+                        ? `<span class="dividend-val">£${d.toFixed(2)}</span>`
+                        : `<span class="dividend-val no-bets">NO BETS</span>`;
+                }
+                if (cellPay) cellPay.textContent = `£${p.toFixed(2)}`;
+                if (cellClub) cellClub.textContent = `£${c.toFixed(2)}`;
+            }
+        }
+
+        // Bind Start Ticket Inputs
+        tbody.querySelectorAll('.start-ticket-input').forEach(inp => {
             inp.addEventListener('input', (e) => {
                 const lane = parseInt(e.target.dataset.lane, 10);
-                const val = Math.max(0, parseInt(e.target.value, 10) || 0);
-                session.currentBets[lane] = val;
+                const sVal = Math.max(0, parseInt(e.target.value, 10) || 0);
+                session.currentStartTickets[lane] = sVal;
 
-                const newCalc = calculateToteDividends(session.currentBets, session.settings);
-                session.currentDividends = newCalc.dividends;
-                saveSessionData(session);
+                if (!session.currentOverrides[lane]) {
+                    const nVal = parseInt(session.currentNextTickets[lane], 10) || 0;
+                    const sold = Math.max(0, nVal - sVal);
+                    session.currentBets[lane] = sold;
+                    const ticketInput = tbody.querySelector(`.ticket-input[data-lane="${lane}"]`);
+                    if (ticketInput) ticketInput.value = sold;
+                }
+                updateLiveCalculations();
+            });
+        });
 
-                // Update summary strip in real-time
-                if (totalTicketsEl) totalTicketsEl.textContent = newCalc.totalTickets;
-                if (grossPotEl) grossPotEl.textContent = `£${newCalc.grossPot.toFixed(2)}`;
-                if (prizePoolEl) prizePoolEl.textContent = `£${newCalc.prizePool.toFixed(2)}`;
-                if (clubSplitEl) clubSplitEl.textContent = `£${(newCalc.grossPot - newCalc.prizePool).toFixed(2)}`;
+        // Bind Next Ticket Inputs
+        tbody.querySelectorAll('.next-ticket-input').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+                const lane = parseInt(e.target.dataset.lane, 10);
+                const nVal = Math.max(0, parseInt(e.target.value, 10) || 0);
+                session.currentNextTickets[lane] = nVal;
 
-                // Update live columns across all rows
-                for (let k = 0; k < 8; k++) {
-                    const t = parseInt(session.currentBets[k], 10) || 0;
-                    const d = newCalc.dividends[k] || 0;
-                    const p = t * d;
-                    const c = (newCalc.grossPot > 0) ? Math.max(0, newCalc.grossPot - p) : 0;
+                if (!session.currentOverrides[lane]) {
+                    const sVal = parseInt(session.currentStartTickets[lane], 10) || 0;
+                    const sold = Math.max(0, nVal - sVal);
+                    session.currentBets[lane] = sold;
+                    const ticketInput = tbody.querySelector(`.ticket-input[data-lane="${lane}"]`);
+                    if (ticketInput) ticketInput.value = sold;
+                }
+                updateLiveCalculations();
+            });
+        });
 
-                    const cellDiv = document.getElementById(`cell-div-${k}`);
-                    const cellPay = document.getElementById(`cell-pay-${k}`);
-                    const cellClub = document.getElementById(`cell-club-${k}`);
+        // Bind Override Checkboxes
+        tbody.querySelectorAll('.ticket-override-cb').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const lane = parseInt(e.target.dataset.lane, 10);
+                const isOver = e.target.checked;
+                session.currentOverrides[lane] = isOver;
 
-                    if (cellDiv) {
-                        cellDiv.innerHTML = (t > 0 && d > 0)
-                            ? `<span class="dividend-val">£${d.toFixed(2)}</span>`
-                            : `<span class="dividend-val no-bets">NO BETS</span>`;
+                const ticketInput = tbody.querySelector(`.ticket-input[data-lane="${lane}"]`);
+                if (ticketInput) {
+                    if (isOver) {
+                        ticketInput.removeAttribute('readonly');
+                        ticketInput.focus();
+                        ticketInput.select();
+                    } else {
+                        ticketInput.setAttribute('readonly', 'true');
+                        const sVal = parseInt(session.currentStartTickets[lane], 10) || 0;
+                        const nVal = parseInt(session.currentNextTickets[lane], 10) || 0;
+                        const sold = Math.max(0, nVal - sVal);
+                        session.currentBets[lane] = sold;
+                        ticketInput.value = sold;
                     }
-                    if (cellPay) cellPay.textContent = `£${p.toFixed(2)}`;
-                    if (cellClub) cellClub.textContent = `£${c.toFixed(2)}`;
+                }
+                updateLiveCalculations();
+            });
+        });
+
+        // Bind Manual Tickets Sold Input (when override is checked)
+        tbody.querySelectorAll('.ticket-input').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+                const lane = parseInt(e.target.dataset.lane, 10);
+                if (session.currentOverrides[lane]) {
+                    const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                    session.currentBets[lane] = val;
+                    updateLiveCalculations();
                 }
             });
         });
@@ -435,6 +546,7 @@
                         raceIndex: session.currentRaceIndex
                     });
                     renderAll();
+                    triggerAutoSaveLedger();
                 } else if (state === 'SUBMITTED') {
                     // START RACE
                     session.toteState = 'RACING';
@@ -446,13 +558,18 @@
                     // NEXT RACE - progress projector and advance session
                     broadcastChannel.postMessage({ type: 'NEXT_RACE' });
 
+                    const nextStartTickets = session.currentNextTickets ? [...session.currentNextTickets] : [1, 1, 1, 1, 1, 1, 1, 1];
                     session.currentRaceIndex = (session.currentRaceIndex + 1) % storedRaces.length;
+                    session.currentStartTickets = nextStartTickets;
+                    session.currentNextTickets = [...nextStartTickets];
+                    session.currentOverrides = [false, false, false, false, false, false, false, false];
                     session.currentBets = [0, 0, 0, 0, 0, 0, 0, 0];
                     session.currentDividends = [0, 0, 0, 0, 0, 0, 0, 0];
                     session.betsSubmitted = false;
                     session.toteState = 'BETTING';
                     saveSessionData(session);
                     renderAll();
+                    markLedgerPending();
                 }
             });
         }
@@ -493,6 +610,9 @@
                 return `<li><span style="display:inline-block;width:12px;height:12px;background:${col.hex};border-radius:2px;vertical-align:middle;margin-right:6px;"></span>#${i + 1} ${name}</li>`;
             }).join('');
 
+            const exportBtnHtml = isCustom
+                ? `<button class="btn-export-race" data-idx="${idx}">EXPORT EVENT</button>`
+                : '';
             const deleteBtnHtml = isCustom
                 ? `<button class="btn-delete-race" data-idx="${idx}">DELETE</button>`
                 : '';
@@ -506,10 +626,39 @@
                     ${racersListHtml}
                 </ul>
                 <div class="roster-actions">
+                    ${exportBtnHtml}
                     ${deleteBtnHtml}
                 </div>
             `;
             container.appendChild(card);
+        });
+
+        // Bind export event buttons for custom races
+        container.querySelectorAll('.btn-export-race').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.target.dataset.idx, 10);
+                const targetRace = storedRaces[idx];
+                if (!targetRace) return;
+
+                const exportObj = {
+                    version: "1.0",
+                    id: targetRace.id,
+                    name: targetRace.name,
+                    trackCurve: targetRace.trackCurve || 's_curves',
+                    racers: targetRace.racers || targetRace.ducks || []
+                };
+
+                const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const safeName = (targetRace.name || 'race').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+                a.download = `zoombie-event-${safeName}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
         });
 
         // Bind delete buttons
@@ -558,6 +707,81 @@
     function initManageRaces() {
         initRacerInputGrid();
 
+        // Import Event handler
+        const importEventBtn = document.getElementById('import-event-btn');
+        const importEventInput = document.getElementById('import-event-input');
+
+        if (importEventBtn && importEventInput) {
+            importEventBtn.addEventListener('click', () => {
+                importEventInput.value = '';
+                importEventInput.click();
+            });
+
+            importEventInput.addEventListener('change', (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const rawText = String(ev.target.result || '').trim();
+                        let parsed = null;
+                        try {
+                            parsed = JSON.parse(rawText);
+                        } catch (err) {
+                            // Fallback to simple CSV parsing
+                            const lines = rawText.split(/\r?\n/).filter(l => l.trim().length > 0);
+                            if (lines.length > 0) {
+                                const parts = lines[0].split(',').map(s => s.trim().replace(/^"|"$/g, ''));
+                                if (parts.length >= 2) {
+                                    parsed = {
+                                        name: parts[0],
+                                        racers: parts.slice(1, 9)
+                                    };
+                                }
+                            }
+                        }
+
+                        if (!parsed) throw new Error('Could not parse event file');
+
+                        const eventsToAdd = Array.isArray(parsed) ? parsed : [parsed];
+                        let count = 0;
+
+                        eventsToAdd.forEach((item, itemIdx) => {
+                            const name = (item.name || item.raceName || `Imported Event ${storedRaces.length + 1}`).trim();
+                            let racers = Array.isArray(item.racers) ? item.racers : (Array.isArray(item.ducks) ? item.ducks : []);
+                            racers = racers.map(r => String(r).trim()).filter(Boolean);
+
+                            while (racers.length < 8) {
+                                racers.push(`Zoombie ${racers.length + 1}`);
+                            }
+                            racers = racers.slice(0, 8);
+
+                            const newRace = {
+                                id: 'custom_' + Date.now() + '_' + itemIdx,
+                                name: name,
+                                trackCurve: item.trackCurve || 's_curves',
+                                racers: racers,
+                                ducks: racers
+                            };
+
+                            storedRaces.push(newRace);
+                            count++;
+                        });
+
+                        saveRosters();
+                        broadcastChannel.postMessage({ type: 'ROSTER_UPDATED' });
+                        renderAll();
+                        alert(`Successfully imported ${count} event${count === 1 ? '' : 's'}!`);
+                    } catch (err) {
+                        console.error('Error importing event:', err);
+                        alert('Failed to import event. Please ensure the file is valid JSON or CSV with event name and racer names.');
+                    }
+                };
+                reader.readAsText(file);
+            });
+        }
+
         const form = document.getElementById('create-race-form');
         if (form) {
             form.addEventListener('submit', (e) => {
@@ -572,6 +796,7 @@
                 const newRace = {
                     id: 'custom_' + Date.now(),
                     name: eventName,
+                    trackCurve: 's_curves',
                     racers: names,
                     ducks: names
                 };
@@ -609,6 +834,7 @@
     // TAB 3: TOTE SETTINGS
     // ============================================
     function initSettings() {
+        const floatInp = document.getElementById('setting-starting-float');
         const ticketPriceInp = document.getElementById('setting-ticket-price');
         const prizeSplitInp = document.getElementById('setting-prize-split');
         const roundingStepSel = document.getElementById('setting-rounding-step');
@@ -617,12 +843,16 @@
         if (!ticketPriceInp || !prizeSplitInp || !roundingStepSel) return;
 
         const s = session.settings || DEFAULT_TOTE_SETTINGS;
+        if (floatInp) {
+            floatInp.value = (typeof s.startingFloat === 'number') ? s.startingFloat.toFixed(2) : '0.00';
+        }
         ticketPriceInp.value = (typeof s.ticketPrice === 'number') ? s.ticketPrice.toFixed(2) : '1.00';
         prizeSplitInp.value = (typeof s.prizeSplitPct === 'number') ? s.prizeSplitPct : 50;
         roundingStepSel.value = (typeof s.roundingStep === 'number') ? s.roundingStep.toFixed(2) : '0.50';
 
         const saveSettingsFromUI = () => {
             session.settings = {
+                startingFloat: floatInp ? Math.max(0, parseFloat(floatInp.value) || 0) : 0.00,
                 ticketPrice: Math.max(0.10, parseFloat(ticketPriceInp.value) || 1.00),
                 prizeSplitPct: Math.max(10, Math.min(100, parseInt(prizeSplitInp.value, 10) || 50)),
                 roundingStep: parseFloat(roundingStepSel.value) || 0.50
@@ -631,6 +861,7 @@
             const calc = calculateToteDividends(session.currentBets, session.settings);
             session.currentDividends = calc.dividends;
             saveSessionData(session);
+            markLedgerPending();
 
             if (saveMsg) {
                 saveMsg.textContent = 'Settings auto-saved to active session.';
@@ -641,13 +872,14 @@
             renderBettingTable();
         };
 
+        if (floatInp) floatInp.addEventListener('input', saveSettingsFromUI);
         ticketPriceInp.addEventListener('input', saveSettingsFromUI);
         prizeSplitInp.addEventListener('input', saveSettingsFromUI);
         roundingStepSel.addEventListener('change', saveSettingsFromUI);
     }
 
     // ============================================
-    // CSV & XML EXPORT GENERATORS
+    // LEDGER STATUS & CSV SYSTEM
     // ============================================
     function csvEscape(val) {
         if (val === null || val === undefined) return '';
@@ -658,169 +890,658 @@
         return s;
     }
 
-    function exportCSV() {
-        const history = Array.isArray(session.history) ? session.history : [];
-        const headers = [
-            'Session ID',
-            'Race Number',
-            'Race Name',
-            'Timestamp',
-            'Ticket Price (£)',
-            'Prize Split (%)',
-            'Rounding Step (£)',
-            'Lane 1 Tickets',
-            'Lane 2 Tickets',
-            'Lane 3 Tickets',
-            'Lane 4 Tickets',
-            'Lane 5 Tickets',
-            'Lane 6 Tickets',
-            'Lane 7 Tickets',
-            'Lane 8 Tickets',
-            'Total Tickets',
-            'Gross Pot (£)',
-            'Winner Lane',
-            'Winner Name',
-            'Winning Tickets',
-            'Dividend Per Ticket (£)',
-            'Total Paid Out (£)',
-            'Net Club Profit (£)'
-        ];
+    function setLedgerStatus(status) {
+        ledgerStatus = status;
+        const mainBtn = document.getElementById('ledger-main-btn');
+        const textEl = document.getElementById('ledger-status-text');
+        if (!mainBtn || !textEl) return;
 
-        const rows = [headers.join(',')];
+        mainBtn.classList.remove('ledger-state-none', 'ledger-state-saved', 'ledger-state-pending', 'ledger-state-saving', 'ledger-state-error');
+
+        switch (status) {
+            case 'saved':
+                mainBtn.classList.add('ledger-state-saved');
+                textEl.textContent = 'LEDGER SAVED';
+                break;
+            case 'saving':
+                mainBtn.classList.add('ledger-state-saving');
+                textEl.textContent = 'LEDGER SAVING...';
+                break;
+            case 'pending':
+                mainBtn.classList.add('ledger-state-pending');
+                textEl.textContent = 'LEDGER PENDING';
+                break;
+            case 'error':
+                mainBtn.classList.add('ledger-state-error');
+                textEl.textContent = 'LEDGER ERROR';
+                break;
+            case 'none':
+            default:
+                mainBtn.classList.add('ledger-state-none');
+                textEl.textContent = 'CREATE LEDGER';
+                break;
+        }
+    }
+
+    function markLedgerPending() {
+        if (hasLedgerEverBeenCreated && ledgerStatus !== 'saving') {
+            setLedgerStatus('pending');
+        }
+    }
+
+    function triggerAutoSaveLedger() {
+        if (ledgerFileHandle) {
+            writeLedgerFile();
+        } else if (hasLedgerEverBeenCreated) {
+            setLedgerStatus('pending');
+        }
+    }
+
+    function generateLedgerCSV() {
+        const history = Array.isArray(session.history) ? session.history : [];
+        const s = session.settings || DEFAULT_TOTE_SETTINGS;
+        const startingFloat = Number(s.startingFloat) || 0.00;
+
+        let sumTickets = 0;
+        let sumGross = 0;
+        let sumPaidOut = 0;
+        let sumClubProfit = 0;
+
+        history.forEach(r => {
+            sumTickets += (r.totalTickets || 0);
+            sumGross += (r.grossPot || 0);
+            sumPaidOut += (r.totalPaidOut || 0);
+            sumClubProfit += (r.clubRetained || 0);
+        });
+
+        const closingFloat = startingFloat + sumClubProfit;
+        const nowIso = new Date().toISOString();
+
+        const lines = [
+            `# ZOOMBIE RACING TOTE LEDGER`,
+            `# VERSION: 2.0`,
+            `# SESSION_ID: ${session.sessionId}`,
+            `# GENERATED_AT: ${nowIso}`,
+            `# STARTING_FLOAT: ${startingFloat.toFixed(2)}`,
+            `# CLOSING_FLOAT: ${closingFloat.toFixed(2)}`,
+            `# TICKET_PRICE: ${(s.ticketPrice || 1.00).toFixed(2)}`,
+            `# PRIZE_SPLIT_PCT: ${s.prizeSplitPct || 50}`,
+            `# ROUNDING_STEP: ${(s.roundingStep || 0.50).toFixed(2)}`,
+            `# COMPLETED_RACES_COUNT: ${history.length}`,
+            `# TOTAL_TICKETS_SOLD: ${sumTickets}`,
+            `# TOTAL_GROSS_POT: ${sumGross.toFixed(2)}`,
+            `# TOTAL_PAID_OUT: ${sumPaidOut.toFixed(2)}`,
+            `# TOTAL_NET_PROFIT: ${sumClubProfit.toFixed(2)}`,
+            ``,
+            `[SESSION SUMMARY]`,
+            `Property,Value`,
+            `Session ID,${csvEscape(session.sessionId)}`,
+            `Export Timestamp,${csvEscape(nowIso)}`,
+            `Starting Float (£),${startingFloat.toFixed(2)}`,
+            `Closing Float (£),${closingFloat.toFixed(2)}`,
+            `Ticket Price (£),${(s.ticketPrice || 1.00).toFixed(2)}`,
+            `Prize Split (%),${s.prizeSplitPct || 50}%`,
+            `Dividend Rounding Rule (£),${(s.roundingStep || 0.50).toFixed(2)}`,
+            `Total Races Completed,${history.length}`,
+            `Total Tickets Sold,${sumTickets}`,
+            `Total Gross Pot (£),${sumGross.toFixed(2)}`,
+            `Total Paid Out (£),${sumPaidOut.toFixed(2)}`,
+            `Total Net Club Profit (£),${sumClubProfit.toFixed(2)}`,
+            ``,
+            `[COMPLETED RACES]`,
+            `Race #,Race ID,Race Name,Timestamp,Ticket Price (£),Prize Split (%),Rounding Step (£),Total Tickets,Gross Pot (£),Winner Lane,Winner Name,Winning Tickets,Dividend Per Ticket (£),Total Paid Out (£),Net Club Profit (£),Start Tickets (L1-8),Next Tickets (L1-8),Overrides (L1-8),Tickets Sold (L1-8)`
+        ];
 
         history.forEach(r => {
             const tickets = Array.isArray(r.ticketsByRacer) ? r.ticketsByRacer : [0,0,0,0,0,0,0,0];
-            const row = [
-                csvEscape(session.sessionId),
+            const startT = Array.isArray(r.startTicketsByRacer) ? r.startTicketsByRacer : [1,1,1,1,1,1,1,1];
+            const nextT = Array.isArray(r.nextTicketsByRacer) ? r.nextTicketsByRacer : [1,1,1,1,1,1,1,1];
+            const overT = Array.isArray(r.overridesByRacer) ? r.overridesByRacer : [false,false,false,false,false,false,false,false];
+
+            lines.push([
                 csvEscape(r.raceNumber),
-                csvEscape(r.raceName),
-                csvEscape(r.timestamp),
+                csvEscape(r.raceId || ''),
+                csvEscape(r.raceName || ''),
+                csvEscape(r.timestamp || ''),
                 csvEscape((r.ticketPrice || 1.00).toFixed(2)),
                 csvEscape(r.prizeSplitPct || 50),
                 csvEscape((r.roundingStep || 0.50).toFixed(2)),
-                csvEscape(tickets[0] || 0),
-                csvEscape(tickets[1] || 0),
-                csvEscape(tickets[2] || 0),
-                csvEscape(tickets[3] || 0),
-                csvEscape(tickets[4] || 0),
-                csvEscape(tickets[5] || 0),
-                csvEscape(tickets[6] || 0),
-                csvEscape(tickets[7] || 0),
                 csvEscape(r.totalTickets || 0),
                 csvEscape((r.grossPot || 0).toFixed(2)),
-                csvEscape(r.winnerId + 1),
+                csvEscape(r.winnerId != null ? (r.winnerId + 1) : ''),
                 csvEscape(r.winnerName || ''),
                 csvEscape(r.winningTickets || 0),
                 csvEscape((r.dividendPerTicket || 0).toFixed(2)),
                 csvEscape((r.totalPaidOut || 0).toFixed(2)),
-                csvEscape((r.clubRetained || 0).toFixed(2))
-            ];
-            rows.push(row.join(','));
+                csvEscape((r.clubRetained || 0).toFixed(2)),
+                csvEscape(startT.join(';')),
+                csvEscape(nextT.join(';')),
+                csvEscape(overT.map(v => v ? '1' : '0').join(';')),
+                csvEscape(tickets.join(';'))
+            ].join(','));
         });
 
-        const csvContent = rows.join('\r\n');
+        // Active Race Details
+        const activeRace = storedRaces[session.currentRaceIndex] || DEFAULT_RACES[0] || { name: 'Active Race' };
+        const activeCalc = calculateToteDividends(session.currentBets, session.settings);
+        const activeNames = activeRace.racers || activeRace.ducks || [];
+
+        lines.push('');
+        lines.push('[CURRENT RACE]');
+        lines.push('Active Race Index,Active Race Name,Tote Status,Gross Pot (£),Target Prize Pool (£),Base Club Split (£)');
+        lines.push([
+            csvEscape(session.currentRaceIndex + 1),
+            csvEscape(activeRace.name),
+            csvEscape(session.toteState || 'BETTING'),
+            csvEscape(activeCalc.grossPot.toFixed(2)),
+            csvEscape(activeCalc.prizePool.toFixed(2)),
+            csvEscape((activeCalc.grossPot - activeCalc.prizePool).toFixed(2))
+        ].join(','));
+
+        lines.push('');
+        lines.push('[CURRENT RACE LANES]');
+        lines.push('Lane #,Racer Name,Monster Type,Starting Ticket,Next Ticket,Override Active,Tickets Sold,Dividend (£),Total Payout (£),Club Cut (£)');
+
+        for (let lane = 0; lane < 8; lane++) {
+            const mType = (typeof MONSTER_TYPES !== 'undefined' && MONSTER_TYPES[lane]) ? MONSTER_TYPES[lane] : '';
+            const t = parseInt(session.currentBets[lane], 10) || 0;
+            const d = activeCalc.dividends[lane] || 0;
+            const p = t * d;
+            const c = (activeCalc.grossPot > 0) ? Math.max(0, activeCalc.grossPot - p) : 0;
+            const sT = session.currentStartTickets?.[lane] ?? 1;
+            const nT = session.currentNextTickets?.[lane] ?? 1;
+            const isO = session.currentOverrides?.[lane] ? 'YES' : 'NO';
+
+            lines.push([
+                lane + 1,
+                csvEscape(activeNames[lane] || `Zoombie ${lane + 1}`),
+                csvEscape(mType),
+                csvEscape(sT),
+                csvEscape(nT),
+                isO,
+                t,
+                csvEscape(d.toFixed(2)),
+                csvEscape(p.toFixed(2)),
+                csvEscape(c.toFixed(2))
+            ].join(','));
+        }
+
+        return lines.join('\r\n');
+    }
+
+    async function createLedger(replace = false) {
+        if (typeof window.showSaveFilePicker === 'function') {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: `zoombie-ledger-session-${session.sessionId}.csv`,
+                    types: [{
+                        description: 'CSV Tote Ledger',
+                        accept: { 'text/csv': ['.csv'] }
+                    }]
+                });
+                ledgerFileHandle = handle;
+                hasLedgerEverBeenCreated = true;
+                await writeLedgerFile();
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.error('Error selecting ledger file:', err);
+                    setLedgerStatus('error');
+                    alert('Could not create ledger file: ' + err.message);
+                }
+            }
+        } else {
+            // Safari / browsers without File System Access API
+            hasLedgerEverBeenCreated = true;
+            downloadLedgerCSV();
+            setLedgerStatus('saved');
+            alert('Session ledger generated and downloaded!\n\nNote: Safari does not support direct background file sync, but you can export or replace your ledger anytime.');
+        }
+    }
+
+    async function writeLedgerFile() {
+        if (!ledgerFileHandle) {
+            if (hasLedgerEverBeenCreated) {
+                downloadLedgerCSV();
+                setLedgerStatus('saved');
+            }
+            return;
+        }
+
+        try {
+            setLedgerStatus('saving');
+            const csvContent = generateLedgerCSV();
+            const writable = await ledgerFileHandle.createWritable();
+            await writable.write(csvContent);
+            await writable.close();
+            setLedgerStatus('saved');
+        } catch (err) {
+            console.error('Error writing ledger to file:', err);
+            setLedgerStatus('error');
+        }
+    }
+
+    function downloadLedgerCSV() {
+        const csvContent = generateLedgerCSV();
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `zoombie-session-${session.sessionId}.csv`;
+        a.download = `zoombie-ledger-session-${session.sessionId}.csv`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }
 
-    function xmlEscape(val) {
-        if (val === null || val === undefined) return '';
-        return String(val)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&apos;');
+    function importLedger(file) {
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const content = String(e.target.result || '').trim();
+                let imported = null;
+
+                // Try JSON import first
+                if (content.startsWith('{')) {
+                    imported = JSON.parse(content);
+                } else {
+                    // Parse CSV Ledger
+                    const lines = content.split(/\r?\n/);
+                    const meta = {};
+                    lines.forEach(l => {
+                        const trimmed = l.trim();
+                        if (trimmed.startsWith('#')) {
+                            const match = trimmed.match(/^#\s*([A-Z0-9_]+)\s*:\s*(.*)$/i);
+                            if (match) {
+                                meta[match[1].toUpperCase()] = match[2].trim();
+                            }
+                        }
+                    });
+
+                    if (meta.SESSION_ID) {
+                        const restoredHistory = [];
+                        let inCompleted = false;
+                        let inLanes = false;
+                        const restoredStartTickets = [1,1,1,1,1,1,1,1];
+                        const restoredNextTickets = [1,1,1,1,1,1,1,1];
+                        const restoredOverrides = [false,false,false,false,false,false,false,false];
+                        const restoredBets = [0,0,0,0,0,0,0,0];
+
+                        for (let i = 0; i < lines.length; i++) {
+                            const line = lines[i].trim();
+                            if (line === '[COMPLETED RACES]') {
+                                inCompleted = true;
+                                inLanes = false;
+                                continue;
+                            } else if (line === '[CURRENT RACE LANES]') {
+                                inCompleted = false;
+                                inLanes = true;
+                                continue;
+                            } else if (line.startsWith('[') && line.endsWith(']')) {
+                                inCompleted = false;
+                                inLanes = false;
+                                continue;
+                            }
+
+                            if (inCompleted && line && !line.startsWith('Race #')) {
+                                const parts = line.split(',');
+                                if (parts.length >= 15) {
+                                    const rNum = parseInt(parts[0], 10) || 1;
+                                    const rId = parts[1] || `race_${rNum}`;
+                                    const rName = parts[2] || `Race ${rNum}`;
+                                    const time = parts[3] || '';
+                                    const tPrice = parseFloat(parts[4]) || 1.00;
+                                    const split = parseInt(parts[5], 10) || 50;
+                                    const rStep = parseFloat(parts[6]) || 0.50;
+                                    const tTickets = parseInt(parts[7], 10) || 0;
+                                    const gross = parseFloat(parts[8]) || 0;
+                                    const winLane = (parseInt(parts[9], 10) || 1) - 1;
+                                    const winName = parts[10] || '';
+                                    const winTickets = parseInt(parts[11], 10) || 0;
+                                    const divPaid = parseFloat(parts[12]) || 0;
+                                    const paidOut = parseFloat(parts[13]) || 0;
+                                    const profit = parseFloat(parts[14]) || 0;
+
+                                    const parseSemiNums = (str) => (str ? str.replace(/^"|"$/g, '').split(';').map(n => parseInt(n, 10) || 0) : [0,0,0,0,0,0,0,0]);
+                                    const startArr = parseSemiNums(parts[15]);
+                                    const nextArr = parseSemiNums(parts[16]);
+                                    const overArr = (parts[17] ? parts[17].replace(/^"|"$/g, '').split(';').map(n => n === '1') : [false,false,false,false,false,false,false,false]);
+                                    const betsArr = parseSemiNums(parts[18]);
+
+                                    restoredHistory.push({
+                                        raceNumber: rNum,
+                                        raceId: rId,
+                                        raceName: rName,
+                                        timestamp: time,
+                                        ticketPrice: tPrice,
+                                        prizeSplitPct: split,
+                                        roundingStep: rStep,
+                                        ticketsByRacer: betsArr,
+                                        startTicketsByRacer: startArr,
+                                        nextTicketsByRacer: nextArr,
+                                        overridesByRacer: overArr,
+                                        totalTickets: tTickets,
+                                        grossPot: gross,
+                                        initialPrizePool: gross * (split / 100),
+                                        winnerId: winLane,
+                                        winnerName: winName,
+                                        winningTickets: winTickets,
+                                        dividendPerTicket: divPaid,
+                                        totalPaidOut: paidOut,
+                                        clubRetained: profit
+                                    });
+                                }
+                            } else if (inLanes && line && !line.startsWith('Lane #')) {
+                                const parts = line.split(',');
+                                if (parts.length >= 7) {
+                                    const laneIdx = (parseInt(parts[0], 10) || 1) - 1;
+                                    if (laneIdx >= 0 && laneIdx < 8) {
+                                        restoredStartTickets[laneIdx] = parseInt(parts[3], 10) || 1;
+                                        restoredNextTickets[laneIdx] = parseInt(parts[4], 10) || 1;
+                                        restoredOverrides[laneIdx] = (parts[5] && parts[5].toUpperCase() === 'YES');
+                                        restoredBets[laneIdx] = parseInt(parts[6], 10) || 0;
+                                    }
+                                }
+                            }
+                        }
+
+                        imported = {
+                            sessionId: meta.SESSION_ID,
+                            currentRaceIndex: 0,
+                            toteState: 'BETTING',
+                            settings: {
+                                startingFloat: parseFloat(meta.STARTING_FLOAT) || 0.00,
+                                ticketPrice: parseFloat(meta.TICKET_PRICE) || 1.00,
+                                prizeSplitPct: parseInt(meta.PRIZE_SPLIT_PCT, 10) || 50,
+                                roundingStep: parseFloat(meta.ROUNDING_STEP) || 0.50
+                            },
+                            currentStartTickets: restoredStartTickets,
+                            currentNextTickets: restoredNextTickets,
+                            currentOverrides: restoredOverrides,
+                            currentBets: restoredBets,
+                            currentDividends: [0, 0, 0, 0, 0, 0, 0, 0],
+                            betsSubmitted: false,
+                            history: restoredHistory
+                        };
+                    }
+                }
+
+                if (!imported || !imported.sessionId) {
+                    throw new Error('Unrecognised ledger format or missing Session ID');
+                }
+
+                session = imported;
+                saveSessionData(session);
+                hasLedgerEverBeenCreated = true;
+                setLedgerStatus('pending');
+
+                broadcastChannel.postMessage({
+                    type: 'PROJECTOR_RACE_CHANGED',
+                    raceIndex: session.currentRaceIndex
+                });
+                broadcastChannel.postMessage({ type: 'ROSTER_UPDATED' });
+
+                renderAll();
+                alert(`Session ${session.sessionId} ledger successfully imported with ${session.history.length} completed race${session.history.length === 1 ? '' : 's'}!`);
+            } catch (err) {
+                console.error('Error importing ledger:', err);
+                alert('Could not import ledger: ' + err.message);
+            }
+        };
+        reader.readAsText(file);
     }
 
-    function exportXML() {
+    // ============================================
+    // XLSX EXPORT GENERATOR
+    // ============================================
+    function exportXLSX() {
+        if (typeof XLSX === 'undefined') {
+            alert('XLSX engine not loaded. Downloading CSV ledger instead.');
+            downloadLedgerCSV();
+            return;
+        }
+
         const history = Array.isArray(session.history) ? session.history : [];
         const s = session.settings || DEFAULT_TOTE_SETTINGS;
+        const startingFloat = Number(s.startingFloat) || 0.00;
 
-        let totalTicketsAll = 0;
-        let totalGrossAll = 0;
-        let totalPaidAll = 0;
-        let totalProfitAll = 0;
+        let sumTickets = 0;
+        let sumGross = 0;
+        let sumPaidOut = 0;
+        let sumClubProfit = 0;
 
-        let racesXml = '';
         history.forEach(r => {
-            totalTicketsAll += (r.totalTickets || 0);
-            totalGrossAll += (r.grossPot || 0);
-            totalPaidAll += (r.totalPaidOut || 0);
-            totalProfitAll += (r.clubRetained || 0);
-
-            const tickets = Array.isArray(r.ticketsByRacer) ? r.ticketsByRacer : [0,0,0,0,0,0,0,0];
-            let lanesXml = '';
-            for (let i = 0; i < 8; i++) {
-                lanesXml += `        <Lane number="${i + 1}">${tickets[i] || 0}</Lane>\n`;
-            }
-
-            racesXml += `    <Race number="${r.raceNumber}" id="${xmlEscape(r.raceId)}">
-      <Name>${xmlEscape(r.raceName)}</Name>
-      <Timestamp>${xmlEscape(r.timestamp)}</Timestamp>
-      <TicketPrice currency="GBP">${(r.ticketPrice || 1.00).toFixed(2)}</TicketPrice>
-      <PrizeSplitPct>${r.prizeSplitPct || 50}</PrizeSplitPct>
-      <RoundingStep currency="GBP">${(r.roundingStep || 0.50).toFixed(2)}</RoundingStep>
-      <TotalTickets>${r.totalTickets || 0}</TotalTickets>
-      <GrossPot currency="GBP">${(r.grossPot || 0).toFixed(2)}</GrossPot>
-      <InitialPrizePool currency="GBP">${(r.initialPrizePool || 0).toFixed(2)}</InitialPrizePool>
-      <Winner lane="${r.winnerId + 1}">${xmlEscape(r.winnerName || '')}</Winner>
-      <WinningTickets>${r.winningTickets || 0}</WinningTickets>
-      <DividendPerTicket currency="GBP">${(r.dividendPerTicket || 0).toFixed(2)}</DividendPerTicket>
-      <TotalPaidOut currency="GBP">${(r.totalPaidOut || 0).toFixed(2)}</TotalPaidOut>
-      <NetClubProfit currency="GBP">${(r.clubRetained || 0).toFixed(2)}</NetClubProfit>
-      <TicketsByLane>
-${lanesXml}      </TicketsByLane>
-    </Race>\n`;
+            sumTickets += (r.totalTickets || 0);
+            sumGross += (r.grossPot || 0);
+            sumPaidOut += (r.totalPaidOut || 0);
+            sumClubProfit += (r.clubRetained || 0);
         });
 
-        const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
-<ZoombieRacingSession id="${xmlEscape(session.sessionId)}">
-  <ExportTimestamp>${new Date().toISOString()}</ExportTimestamp>
-  <Settings>
-    <TicketPrice currency="GBP">${(s.ticketPrice || 1.00).toFixed(2)}</TicketPrice>
-    <PrizeSplitPct>${s.prizeSplitPct || 50}</PrizeSplitPct>
-    <RoundingStep currency="GBP">${(s.roundingStep || 0.50).toFixed(2)}</RoundingStep>
-  </Settings>
-  <Races>
-${racesXml}  </Races>
-  <SessionTotals>
-    <TotalCompletedRaces>${history.length}</TotalCompletedRaces>
-    <TotalTickets>${totalTicketsAll}</TotalTickets>
-    <TotalGrossPot currency="GBP">${totalGrossAll.toFixed(2)}</TotalGrossPot>
-    <TotalPaidOut currency="GBP">${totalPaidAll.toFixed(2)}</TotalPaidOut>
-    <TotalClubProfit currency="GBP">${totalProfitAll.toFixed(2)}</TotalClubProfit>
-  </SessionTotals>
-</ZoombieRacingSession>`;
+        const closingFloat = startingFloat + sumClubProfit;
+        const wb = XLSX.utils.book_new();
 
-        const blob = new Blob([xmlContent], { type: 'application/xml;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `zoombie-session-${session.sessionId}.xml`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        // Sheet 1: Session Summary
+        const summaryData = [
+            ["ZOOMBIE RACING - SESSION LEDGER"],
+            [""],
+            ["Session ID", session.sessionId],
+            ["Generated", new Date().toLocaleString('en-GB')],
+            ["Starting Float (£)", startingFloat],
+            ["Closing Float (£)", closingFloat],
+            ["Ticket Price (£)", Number(s.ticketPrice) || 1.00],
+            ["Prize Split (%)", Number(s.prizeSplitPct) || 50],
+            ["Dividend Rounding Rule (£)", Number(s.roundingStep) || 0.50],
+            [""],
+            ["FINANCIAL TOTALS", ""],
+            ["Total Completed Races", history.length],
+            ["Total Tickets Sold", sumTickets],
+            ["Total Gross Pot (£)", sumGross],
+            ["Total Paid Out (£)", sumPaidOut],
+            ["Total Net Club Profit (£)", sumClubProfit]
+        ];
+        const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+        XLSX.utils.book_append_sheet(wb, wsSummary, "Session Summary");
+
+        // Sheet 2: Completed Races
+        const completedData = [
+            [
+                "Race #", "Race Name", "Finished Timestamp", "Winner Lane", "Winner Name",
+                "Winning Tickets", "Dividend (£)", "Gross Pot (£)", "Total Paid Out (£)",
+                "Net Club Profit (£)", "Total Tickets",
+                "L1 Sold", "L2 Sold", "L3 Sold", "L4 Sold", "L5 Sold", "L6 Sold", "L7 Sold", "L8 Sold"
+            ]
+        ];
+
+        history.forEach(r => {
+            const t = Array.isArray(r.ticketsByRacer) ? r.ticketsByRacer : [0,0,0,0,0,0,0,0];
+            completedData.push([
+                r.raceNumber,
+                r.raceName,
+                r.timestamp,
+                (r.winnerId != null ? r.winnerId + 1 : ""),
+                r.winnerName || "",
+                r.winningTickets || 0,
+                r.dividendPerTicket || 0,
+                r.grossPot || 0,
+                r.totalPaidOut || 0,
+                r.clubRetained || 0,
+                r.totalTickets || 0,
+                t[0] || 0, t[1] || 0, t[2] || 0, t[3] || 0, t[4] || 0, t[5] || 0, t[6] || 0, t[7] || 0
+            ]);
+        });
+
+        // Totals row
+        completedData.push([
+            "TOTALS", "", "", "", "", "", "",
+            sumGross, sumPaidOut, sumClubProfit, sumTickets,
+            "", "", "", "", "", "", "", ""
+        ]);
+        const wsCompleted = XLSX.utils.aoa_to_sheet(completedData);
+        XLSX.utils.book_append_sheet(wb, wsCompleted, "Completed Races");
+
+        // Sheet 3: Lane Breakdown
+        const breakdownData = [
+            [
+                "Race #", "Race Name", "Lane #", "Racer Name", "Monster",
+                "Starting Ticket", "Next Ticket", "Tickets Sold", "Dividend (£)", "Total Payout (£)", "Club Cut (£)"
+            ]
+        ];
+
+        history.forEach(r => {
+            const raceConfig = storedRaces.find(sr => sr.name === r.raceName) || {};
+            const rNames = raceConfig.racers || raceConfig.ducks || [];
+            const startT = Array.isArray(r.startTicketsByRacer) ? r.startTicketsByRacer : [];
+            const nextT = Array.isArray(r.nextTicketsByRacer) ? r.nextTicketsByRacer : [];
+            const tickets = Array.isArray(r.ticketsByRacer) ? r.ticketsByRacer : [];
+
+            for (let lane = 0; lane < 8; lane++) {
+                const laneSold = tickets[lane] || 0;
+                const isWinner = (r.winnerId === lane);
+                const payout = isWinner ? (r.totalPaidOut || 0) : 0;
+                const mType = (typeof MONSTER_TYPES !== 'undefined' && MONSTER_TYPES[lane]) ? MONSTER_TYPES[lane] : '';
+                breakdownData.push([
+                    r.raceNumber,
+                    r.raceName,
+                    lane + 1,
+                    rNames[lane] || (isWinner ? r.winnerName : `Zoombie ${lane + 1}`),
+                    mType,
+                    startT[lane] ?? "",
+                    nextT[lane] ?? "",
+                    laneSold,
+                    isWinner ? (r.dividendPerTicket || 0) : 0,
+                    payout,
+                    (r.grossPot || 0) - payout
+                ]);
+            }
+        });
+        const wsBreakdown = XLSX.utils.aoa_to_sheet(breakdownData);
+        XLSX.utils.book_append_sheet(wb, wsBreakdown, "Lane Breakdown");
+
+        // Sheet 4: Active Race
+        const activeRace = storedRaces[session.currentRaceIndex] || DEFAULT_RACES[0] || { name: 'Active Race' };
+        const activeNames = activeRace.racers || activeRace.ducks || [];
+        const activeCalc = calculateToteDividends(session.currentBets, session.settings);
+        const activeData = [
+            ["Active Race Index", session.currentRaceIndex + 1],
+            ["Active Race Name", activeRace.name],
+            ["Tote Status", session.toteState || "BETTING"],
+            ["Gross Pot (£)", activeCalc.grossPot],
+            ["Target Prize Pool (£)", activeCalc.prizePool],
+            ["Base Club Split (£)", activeCalc.grossPot - activeCalc.prizePool],
+            [""],
+            [
+                "Lane #", "Racer Name", "Monster", "Starting Ticket", "Next Ticket",
+                "Override Used", "Tickets Sold", "Dividend (£)", "Total Payout (£)", "Club Cut (£)"
+            ]
+        ];
+
+        for (let lane = 0; lane < 8; lane++) {
+            const mType = (typeof MONSTER_TYPES !== 'undefined' && MONSTER_TYPES[lane]) ? MONSTER_TYPES[lane] : '';
+            const t = parseInt(session.currentBets[lane], 10) || 0;
+            const d = activeCalc.dividends[lane] || 0;
+            const p = t * d;
+            const c = (activeCalc.grossPot > 0) ? Math.max(0, activeCalc.grossPot - p) : 0;
+            activeData.push([
+                lane + 1,
+                activeNames[lane] || `Zoombie ${lane + 1}`,
+                mType,
+                session.currentStartTickets?.[lane] ?? 1,
+                session.currentNextTickets?.[lane] ?? 1,
+                session.currentOverrides?.[lane] ? "Yes" : "No",
+                t,
+                d,
+                p,
+                c
+            ]);
+        }
+        const wsActive = XLSX.utils.aoa_to_sheet(activeData);
+        XLSX.utils.book_append_sheet(wb, wsActive, "Active Race");
+
+        XLSX.writeFile(wb, `zoombie-session-${session.sessionId}.xlsx`);
     }
 
+    // ============================================
+    // HEADER ACTIONS
+    // ============================================
     function initHeaderActions() {
         const idEl = document.getElementById('admin-session-id');
         if (idEl) idEl.textContent = session.sessionId;
 
-        const csvBtn = document.getElementById('export-csv-btn');
-        if (csvBtn) csvBtn.addEventListener('click', exportCSV);
+        // Ledger combo button controls
+        const ledgerMainBtn = document.getElementById('ledger-main-btn');
+        const ledgerMenuToggle = document.getElementById('ledger-menu-toggle-btn');
+        const ledgerDropdownMenu = document.getElementById('ledger-dropdown-menu');
+        const ledgerSaveNowBtn = document.getElementById('ledger-save-now-btn');
+        const ledgerReplaceBtn = document.getElementById('ledger-replace-btn');
+        const ledgerImportBtn = document.getElementById('ledger-import-btn');
+        const ledgerDownloadBtn = document.getElementById('ledger-download-btn');
+        const ledgerImportInput = document.getElementById('ledger-file-import-input');
 
-        const xmlBtn = document.getElementById('export-xml-btn');
-        if (xmlBtn) xmlBtn.addEventListener('click', exportXML);
+        if (ledgerMainBtn) {
+            ledgerMainBtn.addEventListener('click', () => {
+                if (!ledgerFileHandle && !hasLedgerEverBeenCreated) {
+                    createLedger(false);
+                } else {
+                    writeLedgerFile();
+                }
+            });
+        }
 
+        if (ledgerMenuToggle && ledgerDropdownMenu) {
+            ledgerMenuToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                ledgerDropdownMenu.classList.toggle('hidden');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!ledgerDropdownMenu.classList.contains('hidden') && !ledgerDropdownMenu.contains(e.target)) {
+                    ledgerDropdownMenu.classList.add('hidden');
+                }
+            });
+        }
+
+        if (ledgerSaveNowBtn) {
+            ledgerSaveNowBtn.addEventListener('click', () => {
+                if (ledgerDropdownMenu) ledgerDropdownMenu.classList.add('hidden');
+                writeLedgerFile();
+            });
+        }
+
+        if (ledgerReplaceBtn) {
+            ledgerReplaceBtn.addEventListener('click', () => {
+                if (ledgerDropdownMenu) ledgerDropdownMenu.classList.add('hidden');
+                createLedger(true);
+            });
+        }
+
+        if (ledgerImportBtn && ledgerImportInput) {
+            ledgerImportBtn.addEventListener('click', () => {
+                if (ledgerDropdownMenu) ledgerDropdownMenu.classList.add('hidden');
+                ledgerImportInput.value = '';
+                ledgerImportInput.click();
+            });
+
+            ledgerImportInput.addEventListener('change', (e) => {
+                const file = e.target.files?.[0];
+                if (file) importLedger(file);
+            });
+        }
+
+        if (ledgerDownloadBtn) {
+            ledgerDownloadBtn.addEventListener('click', () => {
+                if (ledgerDropdownMenu) ledgerDropdownMenu.classList.add('hidden');
+                downloadLedgerCSV();
+            });
+        }
+
+        // Export XLSX button
+        const exportXlsxBtn = document.getElementById('export-xlsx-btn');
+        if (exportXlsxBtn) {
+            exportXlsxBtn.addEventListener('click', exportXLSX);
+        }
+
+        // New Session button
         const newSessionBtn = document.getElementById('new-session-btn');
         if (newSessionBtn) {
             newSessionBtn.addEventListener('click', () => {

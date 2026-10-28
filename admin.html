@@ -30,20 +30,33 @@
         </div>
 
         <div class="header-right">
-            <button id="export-csv-btn" class="header-btn">EXPORT CSV</button>
-            <button id="export-xml-btn" class="header-btn">EXPORT XML</button>
-            <button id="new-session-btn" class="header-btn btn-danger">NEW SESSION</button>
+            <div class="ledger-combo-wrap">
+                <button id="ledger-main-btn" class="header-btn ledger-btn" type="button">
+                    <span class="ledger-status-dot"></span>
+                    <span id="ledger-status-text">CREATE LEDGER</span>
+                </button>
+                <button id="ledger-menu-toggle-btn" class="header-btn ledger-toggle-btn" type="button" title="Ledger Options" aria-label="Ledger Options">▾</button>
+                <div id="ledger-dropdown-menu" class="ledger-menu hidden">
+                    <button id="ledger-save-now-btn" class="ledger-menu-item" type="button">Save Ledger Now</button>
+                    <button id="ledger-replace-btn" class="ledger-menu-item" type="button">Replace Ledger...</button>
+                    <button id="ledger-import-btn" class="ledger-menu-item" type="button">Import Ledger...</button>
+                    <button id="ledger-download-btn" class="ledger-menu-item" type="button">Download CSV Backup</button>
+                </div>
+            </div>
+            <input type="file" id="ledger-file-import-input" accept=".csv,.json" style="display: none;">
+            <button id="export-xlsx-btn" class="header-btn" type="button">EXPORT XLSX</button>
+            <button id="new-session-btn" class="header-btn btn-danger" type="button">NEW SESSION</button>
         </div>
     </header>
 
     <nav class="admin-nav">
-        <button class="nav-tab active" data-tab="live">LIVE TOTE &amp; CONTROL</button>
+        <button class="nav-tab active" data-tab="live">LIVE TOTE</button>
         <button class="nav-tab" data-tab="races">MANAGE RACES</button>
         <button class="nav-tab" data-tab="settings">TOTE SETTINGS</button>
     </nav>
 
     <main class="admin-content">
-        <!-- TAB 1: LIVE TOTE & CONTROL -->
+        <!-- TAB 1: LIVE TOTE -->
         <section id="tab-live" class="tab-pane active">
             <div class="card active-race-card">
                 <div class="card-header">
@@ -86,12 +99,15 @@
                     <table class="tote-table" id="betting-table">
                         <thead>
                             <tr>
-                                <th style="width: 80px;">LANE</th>
-                                <th>RACER &amp; MONSTER</th>
-                                <th style="width: 170px;">TICKETS SOLD</th>
-                                <th style="width: 170px;">DIVIDEND PREVIEW</th>
-                                <th style="width: 170px;">LIABILITY / PAYOUT</th>
-                                <th style="width: 170px;">POTENTIAL CLUB CUT</th>
+                                <th style="width: 55px;">LANE</th>
+                                <th>RACER</th>
+                                <th style="width: 125px;">STARTING TICKET</th>
+                                <th style="width: 125px;">NEXT TICKET</th>
+                                <th style="width: 75px; text-align: center;">OVERRIDE</th>
+                                <th style="width: 110px;">TICKETS SOLD</th>
+                                <th style="width: 105px;">DIVIDEND</th>
+                                <th style="width: 115px;">TOTAL PAYOUT</th>
+                                <th style="width: 115px;">CLUB CUT</th>
                             </tr>
                         </thead>
                         <tbody id="betting-tbody">
@@ -137,8 +153,12 @@
         <!-- TAB 2: MANAGE RACES -->
         <section id="tab-races" class="tab-pane">
             <div class="card">
-                <div class="card-header">
+                <div class="card-header roster-header">
                     <h2>CURRENT RACE ROSTERS</h2>
+                    <div class="roster-header-actions">
+                        <button type="button" id="import-event-btn" class="btn btn-secondary btn-sm">IMPORT EVENT</button>
+                        <input type="file" id="import-event-input" accept=".json,.csv" style="display: none;">
+                    </div>
                 </div>
                 <div id="roster-list" class="roster-list">
                     <!-- Populated dynamically -->
@@ -174,9 +194,17 @@
         <section id="tab-settings" class="tab-pane">
             <div class="card settings-card">
                 <div class="card-header">
-                    <h2>TOTE FINANCIAL SETTINGS</h2>
+                    <h2>TOTE SETTINGS</h2>
                 </div>
                 <form id="settings-form" class="settings-form">
+                    <div class="settings-group">
+                        <label for="setting-starting-float">
+                            <strong>Starting Float (£):</strong>
+                            <span class="help-text">The initial cash float in the tote tin at the start of the event session. Default: £0.00</span>
+                        </label>
+                        <input type="number" id="setting-starting-float" min="0" step="1.00" value="0.00">
+                    </div>
+
                     <div class="settings-group">
                         <label for="setting-ticket-price">
                             <strong>Ticket Price (£):</strong>
@@ -218,6 +246,7 @@
         </section>
     </main>
 
+    <script src="xlsx.full.min.js"></script>
     <script src="data.js"></script>
     <script src="admin.js"></script>
 </body>

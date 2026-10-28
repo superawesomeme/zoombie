@@ -95,6 +95,138 @@ body {
     gap: 10px;
 }
 
+/* ============================================
+   LEDGER COMBO BUTTON & STATUS
+   ============================================ */
+.ledger-combo-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+}
+
+.ledger-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: none;
+    letter-spacing: 0.5px;
+    font-size: 0.95rem;
+}
+
+.ledger-toggle-btn {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+}
+
+.ledger-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: none;
+}
+
+.ledger-state-none {
+    background: rgba(192, 66, 255, 0.18);
+    border-color: var(--broadcast-accent);
+    color: #fff;
+}
+
+.ledger-state-saved {
+    background: rgba(118, 255, 3, 0.12);
+    border-color: rgba(118, 255, 3, 0.4);
+    color: #c6ff00;
+}
+.ledger-state-saved .ledger-status-dot {
+    display: inline-block;
+    background: var(--broadcast-ecto);
+    box-shadow: 0 0 8px var(--broadcast-ecto);
+}
+
+.ledger-state-pending {
+    background: rgba(255, 171, 0, 0.15);
+    border-color: var(--broadcast-amber);
+    color: #ffd54f;
+}
+.ledger-state-pending .ledger-status-dot {
+    display: inline-block;
+    background: var(--broadcast-amber);
+    box-shadow: 0 0 6px var(--broadcast-amber);
+}
+
+.ledger-state-saving {
+    background: rgba(192, 66, 255, 0.25);
+    border-color: var(--broadcast-accent);
+    color: #fff;
+}
+.ledger-state-saving .ledger-status-dot {
+    display: inline-block;
+    background: var(--broadcast-accent);
+    box-shadow: 0 0 8px var(--broadcast-accent);
+    animation: ledgerPulse 1s infinite alternate;
+}
+
+.ledger-state-error {
+    background: rgba(244, 41, 65, 0.15);
+    border-color: var(--broadcast-red);
+    color: #ff8a80;
+}
+.ledger-state-error .ledger-status-dot {
+    display: inline-block;
+    background: var(--broadcast-red);
+    box-shadow: 0 0 8px var(--broadcast-red);
+}
+
+@keyframes ledgerPulse {
+    0% { opacity: 0.4; transform: scale(0.85); }
+    100% { opacity: 1; transform: scale(1.2); }
+}
+
+.ledger-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--broadcast-card);
+    border: 1px solid var(--broadcast-border);
+    border-radius: 4px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+    z-index: 1000;
+    min-width: 195px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.ledger-menu.hidden {
+    display: none;
+}
+
+.ledger-menu-item {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--broadcast-text);
+    padding: 9px 14px;
+    text-align: left;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.ledger-menu-item:last-child {
+    border-bottom: none;
+}
+
+.ledger-menu-item:hover {
+    background: rgba(192, 66, 255, 0.25);
+    color: #fff;
+}
+
 .header-btn {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid var(--broadcast-border);
@@ -517,22 +649,23 @@ tbody tr.winner-row {
     color: var(--broadcast-muted);
 }
 
-/* Ticket Input */
+/* Ticket Inputs */
+.ticket-num-input,
 .ticket-input {
     width: 100%;
-    max-width: 130px;
     background: #0a0514;
     border: 1px solid var(--broadcast-border);
     border-radius: 4px;
     color: #fff;
     font-family: 'Rajdhani', sans-serif;
-    font-size: 1.35rem;
+    font-size: 1.25rem;
     font-weight: 700;
-    padding: 6px 10px;
+    padding: 6px 8px;
     text-align: right;
     transition: all 0.15s ease;
 }
 
+.ticket-num-input:focus,
 .ticket-input:focus {
     outline: none;
     border-color: var(--broadcast-accent);
@@ -540,11 +673,38 @@ tbody tr.winner-row {
     box-shadow: 0 0 8px rgba(192, 66, 255, 0.4);
 }
 
+.ticket-num-input:disabled,
 .ticket-input:disabled {
     background: rgba(0, 0, 0, 0.3);
     color: #888;
     border-color: rgba(255, 255, 255, 0.1);
     cursor: not-allowed;
+}
+
+.ticket-input[readonly] {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: var(--broadcast-ecto);
+    cursor: default;
+    user-select: none;
+}
+
+.ticket-override-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ticket-override-cb {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--broadcast-accent);
+    cursor: pointer;
+}
+
+.ticket-override-cb:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
 }
 
 /* Dividend values */
@@ -638,9 +798,48 @@ tbody tr.winner-row {
     margin-bottom: 12px;
 }
 
+.roster-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.roster-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-sm {
+    padding: 4px 12px;
+    font-size: 0.85rem;
+}
+
 .roster-actions {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-export-race {
+    background: rgba(192, 66, 255, 0.15);
+    border: 1px solid var(--broadcast-accent);
+    color: #e1bee7;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-export-race:hover {
+    background: var(--broadcast-accent);
+    color: #fff;
 }
 
 .btn-delete-race {

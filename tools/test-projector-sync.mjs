@@ -147,6 +147,12 @@ async function runDualScreenTest() {
         await projectorPage.connect();
         await projectorPage.send('Runtime.enable');
         await projectorPage.send('Page.enable');
+        projectorPage.on('Runtime.consoleAPICalled', (p) => {
+            if (p.type === 'error') console.log('Projector console error:', p.args.map(a => a.value || a.description).join(' '));
+        });
+        projectorPage.on('Runtime.exceptionThrown', (p) => {
+            console.error('Projector unhandled exception:', p.exceptionDetails.exception?.description || p.exceptionDetails.text);
+        });
         await projectorPage.send('Page.navigate', { url: `http://localhost:${PORT}/index.html` });
 
         // Tab 2: Admin (admin.html)
@@ -156,9 +162,14 @@ async function runDualScreenTest() {
         await adminPage.connect();
         await adminPage.send('Runtime.enable');
         await adminPage.send('Page.enable');
+        adminPage.on('Page.javascriptDialogOpening', async () => {
+            await adminPage.send('Page.handleJavaScriptDialog', { accept: true });
+        });
         await adminPage.send('Page.navigate', { url: `http://localhost:${PORT}/admin.html` });
 
         await delay(2500);
+        await adminPage.evaluate(`window.alert = () => {}; window.confirm = () => true;`);
+        await projectorPage.evaluate(`window.alert = () => {}; window.confirm = () => true;`);
 
         console.log('Dual screen loaded. Checking projector readiness and admin connection...');
         const adminPill = await adminPage.evaluate(`
@@ -168,7 +179,7 @@ async function runDualScreenTest() {
 
         // Submit bets from admin
         console.log('Entering bets in admin and submitting...');
-        await adminPage.evaluate(`
+        const clickRes = await adminPage.evaluate(`
             (() => {
                 const sInp = document.querySelector('.start-ticket-input[data-lane="0"]');
                 const nInp = document.querySelector('.next-ticket-input[data-lane="0"]');
@@ -178,19 +189,35 @@ async function runDualScreenTest() {
                 nInp.dispatchEvent(new Event('input', { bubbles: true }));
 
                 const mainBtn = document.getElementById('main-action-btn');
+                const beforeText = mainBtn.textContent.trim();
                 mainBtn.click(); // SUBMIT BETS TO SCREEN
+                const afterText = mainBtn.textContent.trim();
+                const session = JSON.parse(localStorage.getItem('zoombieSession_v1'));
+                return {
+                    beforeText,
+                    afterText,
+                    betsSubmitted: session?.betsSubmitted,
+                    toteState: session?.toteState,
+                    bet0: session?.currentBets[0],
+                    div0: session?.currentDividends[0]
+                };
             })()
         `);
+        console.log('Admin click result:', clickRes);
 
         await delay(1000);
 
         // Check if projector preview updated with dividend payout
         const projectorPreview = await projectorPage.evaluate(`
             (() => {
+                const session = JSON.parse(localStorage.getItem('zoombieSession_v1'));
                 const previewPayout = document.querySelector('.preview-payout');
+                const previewBox = document.getElementById('racer-preview');
                 return {
+                    sessionBetsSubmitted: session?.betsSubmitted,
                     hasPayoutBadge: !!previewPayout,
-                    payoutText: previewPayout ? previewPayout.textContent : ''
+                    payoutText: previewPayout ? previewPayout.textContent : '',
+                    previewHtml: previewBox ? previewBox.innerHTML.substring(0, 300) : ''
                 };
             })()
         `);

@@ -82,7 +82,7 @@
             text.textContent = 'OFFLINE - OPEN INDEX.HTML';
         } else if (projectorIsReady) {
             pill.className = 'status-pill status-green';
-            text.textContent = 'CONNECTED - PROJECTOR READY';
+            text.textContent = 'CONNECTED';
         } else {
             pill.className = 'status-pill status-amber';
             text.textContent = 'PROJECTOR LOADING...';
@@ -831,7 +831,7 @@
     }
 
     // ============================================
-    // TAB 3: TOTE SETTINGS
+    // TAB 3: TOTE SETTINGS & TAB 4: OTHER SETTINGS
     // ============================================
     function initSettings() {
         const floatInp = document.getElementById('setting-starting-float');
@@ -839,6 +839,17 @@
         const prizeSplitInp = document.getElementById('setting-prize-split');
         const roundingStepSel = document.getElementById('setting-rounding-step');
         const saveMsg = document.getElementById('settings-save-msg');
+
+        // Other Settings Elements
+        const masterMuteCb = document.getElementById('setting-master-mute');
+        const muteStatusLabel = document.getElementById('mute-status-label');
+        const engineVolumeSel = document.getElementById('setting-engine-volume');
+        const impactVolumeSel = document.getElementById('setting-impact-volume');
+        const announcerVolumeSel = document.getElementById('setting-announcer-volume');
+        const hazardDensitySel = document.getElementById('setting-hazard-density');
+        const simulationSpeedSel = document.getElementById('setting-simulation-speed');
+        const remoteFullscreenBtn = document.getElementById('btn-remote-fullscreen');
+        const otherSaveMsg = document.getElementById('other-settings-save-msg');
 
         if (!ticketPriceInp || !prizeSplitInp || !roundingStepSel) return;
 
@@ -850,8 +861,33 @@
         prizeSplitInp.value = (typeof s.prizeSplitPct === 'number') ? s.prizeSplitPct : 50;
         roundingStepSel.value = (typeof s.roundingStep === 'number') ? s.roundingStep.toFixed(2) : '0.50';
 
+        // Populate Other Settings
+        if (masterMuteCb) {
+            masterMuteCb.checked = Boolean(s.masterMute);
+            if (muteStatusLabel) {
+                muteStatusLabel.textContent = s.masterMute ? 'Muted (All Projector Sound Silenced)' : 'Unmuted (Normal Sound)';
+                muteStatusLabel.style.color = s.masterMute ? 'var(--broadcast-red)' : 'var(--broadcast-text)';
+            }
+        }
+        if (engineVolumeSel) {
+            engineVolumeSel.value = (typeof s.engineVolume === 'number') ? String(s.engineVolume) : '100';
+        }
+        if (impactVolumeSel) {
+            impactVolumeSel.value = (typeof s.impactVolume === 'number') ? String(s.impactVolume) : '100';
+        }
+        if (announcerVolumeSel) {
+            announcerVolumeSel.value = (typeof s.announcerVolume === 'number') ? String(s.announcerVolume) : '100';
+        }
+        if (hazardDensitySel) {
+            hazardDensitySel.value = s.hazardDensity || 'normal';
+        }
+        if (simulationSpeedSel) {
+            simulationSpeedSel.value = (typeof s.simulationSpeed === 'number') ? String(s.simulationSpeed) : '1.0';
+        }
+
         const saveSettingsFromUI = () => {
             session.settings = {
+                ...(session.settings || DEFAULT_TOTE_SETTINGS),
                 startingFloat: floatInp ? Math.max(0, parseFloat(floatInp.value) || 0) : 0.00,
                 ticketPrice: Math.max(0.10, parseFloat(ticketPriceInp.value) || 1.00),
                 prizeSplitPct: Math.max(10, Math.min(100, parseInt(prizeSplitInp.value, 10) || 50)),
@@ -872,10 +908,66 @@
             renderBettingTable();
         };
 
+        const saveOtherSettingsFromUI = () => {
+            const isMuted = masterMuteCb ? masterMuteCb.checked : false;
+            const engVol = engineVolumeSel ? parseInt(engineVolumeSel.value, 10) : 100;
+            const impVol = impactVolumeSel ? parseInt(impactVolumeSel.value, 10) : 100;
+            const annVol = announcerVolumeSel ? parseInt(announcerVolumeSel.value, 10) : 100;
+            const hazDen = hazardDensitySel ? hazardDensitySel.value : 'normal';
+            const simSpd = simulationSpeedSel ? parseFloat(simulationSpeedSel.value) : 1.0;
+
+            if (muteStatusLabel) {
+                muteStatusLabel.textContent = isMuted ? 'Muted (All Projector Sound Silenced)' : 'Unmuted (Normal Sound)';
+                muteStatusLabel.style.color = isMuted ? 'var(--broadcast-red)' : 'var(--broadcast-text)';
+            }
+
+            session.settings = {
+                ...(session.settings || DEFAULT_TOTE_SETTINGS),
+                masterMute: isMuted,
+                engineVolume: engVol,
+                impactVolume: impVol,
+                announcerVolume: annVol,
+                hazardDensity: hazDen,
+                simulationSpeed: simSpd
+            };
+
+            saveSessionData(session);
+            if (typeof savePersistentOtherSettings === 'function') {
+                savePersistentOtherSettings(session.settings);
+            }
+            markLedgerPending();
+
+            broadcastChannel.postMessage({
+                type: 'OTHER_SETTINGS_UPDATED',
+                settings: session.settings
+            });
+
+            if (otherSaveMsg) {
+                otherSaveMsg.textContent = 'Settings auto-saved to active session.';
+                otherSaveMsg.style.opacity = '1';
+                setTimeout(() => { otherSaveMsg.style.opacity = '0.85'; }, 1500);
+            }
+        };
+
         if (floatInp) floatInp.addEventListener('input', saveSettingsFromUI);
         ticketPriceInp.addEventListener('input', saveSettingsFromUI);
         prizeSplitInp.addEventListener('input', saveSettingsFromUI);
         roundingStepSel.addEventListener('change', saveSettingsFromUI);
+
+        if (masterMuteCb) masterMuteCb.addEventListener('change', saveOtherSettingsFromUI);
+        if (engineVolumeSel) engineVolumeSel.addEventListener('change', saveOtherSettingsFromUI);
+        if (impactVolumeSel) impactVolumeSel.addEventListener('change', saveOtherSettingsFromUI);
+        if (announcerVolumeSel) announcerVolumeSel.addEventListener('change', saveOtherSettingsFromUI);
+        if (hazardDensitySel) hazardDensitySel.addEventListener('change', saveOtherSettingsFromUI);
+        if (simulationSpeedSel) simulationSpeedSel.addEventListener('change', saveOtherSettingsFromUI);
+
+        if (remoteFullscreenBtn) {
+            remoteFullscreenBtn.addEventListener('click', () => {
+                broadcastChannel.postMessage({ type: 'TOGGLE_FULLSCREEN' });
+                remoteFullscreenBtn.textContent = 'COMMAND SENT!';
+                setTimeout(() => { remoteFullscreenBtn.textContent = 'TOGGLE FULLSCREEN'; }, 1200);
+            });
+        }
     }
 
     // ============================================
@@ -967,6 +1059,12 @@
             `# TICKET_PRICE: ${(s.ticketPrice || 1.00).toFixed(2)}`,
             `# PRIZE_SPLIT_PCT: ${s.prizeSplitPct || 50}`,
             `# ROUNDING_STEP: ${(s.roundingStep || 0.50).toFixed(2)}`,
+            `# ENGINE_VOLUME: ${s.engineVolume ?? 100}`,
+            `# IMPACT_VOLUME: ${s.impactVolume ?? 100}`,
+            `# ANNOUNCER_VOLUME: ${s.announcerVolume ?? 100}`,
+            `# MASTER_MUTE: ${s.masterMute ? '1' : '0'}`,
+            `# HAZARD_DENSITY: ${s.hazardDensity || 'normal'}`,
+            `# SIMULATION_SPEED: ${s.simulationSpeed ?? 1.0}`,
             `# COMPLETED_RACES_COUNT: ${history.length}`,
             `# TOTAL_TICKETS_SOLD: ${sumTickets}`,
             `# TOTAL_GROSS_POT: ${sumGross.toFixed(2)}`,
@@ -982,6 +1080,12 @@
             `Ticket Price (£),${(s.ticketPrice || 1.00).toFixed(2)}`,
             `Prize Split (%),${s.prizeSplitPct || 50}%`,
             `Dividend Rounding Rule (£),${(s.roundingStep || 0.50).toFixed(2)}`,
+            `Master Mute (PA Mode),${s.masterMute ? 'YES' : 'NO'}`,
+            `Engine Volume (%),${s.engineVolume ?? 100}%`,
+            `Impact Volume (%),${s.impactVolume ?? 100}%`,
+            `Announcer & Fanfare Volume (%),${s.announcerVolume ?? 100}%`,
+            `Hazard Density,${s.hazardDensity || 'normal'}`,
+            `Simulation Speed,${s.simulationSpeed ?? 1.0}x`,
             `Total Races Completed,${history.length}`,
             `Total Tickets Sold,${sumTickets}`,
             `Total Gross Pot (£),${sumGross.toFixed(2)}`,
@@ -1254,7 +1358,13 @@
                                 startingFloat: parseFloat(meta.STARTING_FLOAT) || 0.00,
                                 ticketPrice: parseFloat(meta.TICKET_PRICE) || 1.00,
                                 prizeSplitPct: parseInt(meta.PRIZE_SPLIT_PCT, 10) || 50,
-                                roundingStep: parseFloat(meta.ROUNDING_STEP) || 0.50
+                                roundingStep: parseFloat(meta.ROUNDING_STEP) || 0.50,
+                                engineVolume: meta.ENGINE_VOLUME != null ? parseInt(meta.ENGINE_VOLUME, 10) : (session.settings?.engineVolume ?? 100),
+                                impactVolume: meta.IMPACT_VOLUME != null ? parseInt(meta.IMPACT_VOLUME, 10) : (session.settings?.impactVolume ?? 100),
+                                announcerVolume: meta.ANNOUNCER_VOLUME != null ? parseInt(meta.ANNOUNCER_VOLUME, 10) : (session.settings?.announcerVolume ?? 100),
+                                masterMute: meta.MASTER_MUTE === '1' || meta.MASTER_MUTE === 'true',
+                                hazardDensity: ['high', 'normal', 'low', 'disabled'].includes(meta.HAZARD_DENSITY) ? meta.HAZARD_DENSITY : (session.settings?.hazardDensity ?? 'normal'),
+                                simulationSpeed: meta.SIMULATION_SPEED != null ? parseFloat(meta.SIMULATION_SPEED) : (session.settings?.simulationSpeed ?? 1.0)
                             },
                             currentStartTickets: restoredStartTickets,
                             currentNextTickets: restoredNextTickets,
@@ -1332,6 +1442,12 @@
             ["Ticket Price (£)", Number(s.ticketPrice) || 1.00],
             ["Prize Split (%)", Number(s.prizeSplitPct) || 50],
             ["Dividend Rounding Rule (£)", Number(s.roundingStep) || 0.50],
+            ["Master Mute (PA Mode)", s.masterMute ? "YES" : "NO"],
+            ["Engine Volume (%)", Number(s.engineVolume) || 100],
+            ["Impact Volume (%)", Number(s.impactVolume) || 100],
+            ["Announcer & Fanfare Volume (%)", Number(s.announcerVolume) || 100],
+            ["Hazard Density", s.hazardDensity || "normal"],
+            ["Simulation Speed", `${Number(s.simulationSpeed) || 1.0}x`],
             [""],
             ["FINANCIAL TOTALS", ""],
             ["Total Completed Races", history.length],

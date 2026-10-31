@@ -42,6 +42,7 @@ if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
 let storedRaces = [];
 let currentRaceIndex = 0;
 let gameSpeed = 1.0;
+let isSceneInitialized = false;
 
 // ============================================
 // DUAL-SCREEN BROADCAST CHANNEL & REMOTE SYNC
@@ -141,11 +142,36 @@ broadcastChannel.onmessage = (event) => {
             if (typeof generateTrackHazards === 'function') generateTrackHazards();
             break;
 
+        case 'OTHER_SETTINGS_UPDATED':
+        case 'AUDIO_SETTINGS_UPDATED':
+        case 'SETTINGS_UPDATED':
+            if (typeof applyAudioSettings === 'function') applyAudioSettings(msg.settings);
+            if (typeof applySimulationSettings === 'function') applySimulationSettings(msg.settings);
+            break;
+
+        case 'TOGGLE_FULLSCREEN':
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.warn('Fullscreen request failed (requires user gesture):', err);
+                });
+            } else {
+                document.exitFullscreen().catch(err => console.warn(err));
+            }
+            break;
+
         case 'SESSION_RESET':
             window.location.reload();
             break;
     }
 };
+
+window.addEventListener('storage', (e) => {
+    if (e.key === 'zoombieSession_v1' || e.key === 'zoombie_other_settings' || e.key === 'zoombie_audio_settings') {
+        if (typeof applyAudioSettings === 'function') applyAudioSettings();
+        if (typeof applySimulationSettings === 'function') applySimulationSettings();
+        if (typeof updateRacerPreview === 'function') updateRacerPreview();
+    }
+});
 
 // Web Audio Autoplay Unlock
 function unlockAudioOnce() {
@@ -208,6 +234,104 @@ sfxStart.volume = 1.0;
 const sfxWinner = new Audio('audio/winner.ogg');
 sfxWinner.volume = 1.0;
 
+// Dynamic audio levels state
+let currentEngineVolumeFactor = 1.0;
+let currentImpactVolumeFactor = 1.0;
+let currentAnnouncerVolumeFactor = 1.0;
+let isMasterMuted = false;
+let raceAudioTargetVolume = 1.0;
+let isFadingInRaceAudio = false;
+let raceAudioFadeTimer = 0;
+
+function getAudioSettings() {
+    const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
+    let enginePct = session?.settings?.engineVolume;
+    let impactPct = session?.settings?.impactVolume;
+    let announcerPct = session?.settings?.announcerVolume;
+    let masterMute = session?.settings?.masterMute;
+    if (typeof enginePct !== 'number' || typeof impactPct !== 'number' || typeof announcerPct !== 'number') {
+        try {
+            const raw = localStorage.getItem('zoombie_other_settings') || localStorage.getItem('zoombie_audio_settings');
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (typeof enginePct !== 'number' && typeof parsed.engineVolume === 'number') enginePct = parsed.engineVolume;
+                if (typeof impactPct !== 'number' && typeof parsed.impactVolume === 'number') impactPct = parsed.impactVolume;
+                if (typeof announcerPct !== 'number' && typeof parsed.announcerVolume === 'number') announcerPct = parsed.announcerVolume;
+                if (typeof masterMute !== 'boolean' && typeof parsed.masterMute === 'boolean') masterMute = parsed.masterMute;
+            }
+        } catch (e) {}
+    }
+    return {
+        engineVolume: (typeof enginePct === 'number') ? enginePct : 100,
+        impactVolume: (typeof impactPct === 'number') ? impactPct : 100,
+        announcerVolume: (typeof announcerPct === 'number') ? announcerPct : 100,
+        masterMute: Boolean(masterMute)
+    };
+}
+
+function applyAudioSettings(customSettings) {
+    const s = customSettings || getAudioSettings();
+    const engPct = (typeof s.engineVolume === 'number') ? s.engineVolume : 100;
+    const impPct = (typeof s.impactVolume === 'number') ? s.impactVolume : 100;
+    const annPct = (typeof s.announcerVolume === 'number') ? s.announcerVolume : 100;
+    isMasterMuted = Boolean(s.masterMute);
+
+    const muteFactor = isMasterMuted ? 0 : 1;
+    currentEngineVolumeFactor = (Math.max(0, Math.min(100, engPct)) / 100) * muteFactor;
+    currentImpactVolumeFactor = (Math.max(0, Math.min(100, impPct)) / 100) * muteFactor;
+    currentAnnouncerVolumeFactor = (Math.max(0, Math.min(100, annPct)) / 100) * muteFactor;
+
+    // Apply to impact sound pools (collisions, slime, leaves)
+    if (Array.isArray(thudAudioPool)) {
+        thudAudioPool.forEach(a => { a.volume = 0.90 * currentImpactVolumeFactor; });
+    }
+    if (Array.isArray(slimeAudioPool)) {
+        slimeAudioPool.forEach(a => { a.volume = 0.85 * currentImpactVolumeFactor; });
+    }
+    if (Array.isArray(leafAudioPool)) {
+        leafAudioPool.forEach(a => { a.volume = 1.00 * currentImpactVolumeFactor; });
+    }
+
+    // Apply to engine rev sound
+    if (sfxEngine) {
+        sfxEngine.volume = 0.95 * currentEngineVolumeFactor;
+    }
+
+    // Apply to announcer sounds (start countdown and winner announcement)
+    if (sfxStart) {
+        sfxStart.volume = 1.0 * currentAnnouncerVolumeFactor;
+    }
+    if (sfxWinner) {
+        sfxWinner.volume = 1.0 * currentAnnouncerVolumeFactor;
+    }
+
+    // Apply to background race engine audio ("race.ogg")
+    if (sfxRace) {
+        if (raceState === RACE_STATE.RACING && !raceEnded) {
+            raceAudioTargetVolume = Math.min(raceAudioTargetVolume, currentEngineVolumeFactor);
+            sfxRace.volume = Math.min(sfxRace.volume, currentEngineVolumeFactor);
+            if (currentEngineVolumeFactor === 0) {
+                sfxRace.volume = 0;
+            }
+        } else if (!isRacing) {
+            if (sfxRace.paused) {
+                raceAudioTargetVolume = currentEngineVolumeFactor;
+            }
+        }
+    }
+}
+
+function applySimulationSettings(customSettings) {
+    const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
+    const s = customSettings || session?.settings || (typeof loadPersistentOtherSettings === 'function' ? loadPersistentOtherSettings() : null);
+    if (s && typeof s.simulationSpeed === 'number') {
+        gameSpeed = s.simulationSpeed;
+    }
+    if (isSceneInitialized && raceState === RACE_STATE.READY && typeof generateTrackHazards === 'function') {
+        generateTrackHazards();
+    }
+}
+
 // Collision thud audio pool for punchy, overlapping collision sounds
 const THUD_POOL_SIZE = 6;
 const thudAudioPool = Array.from({ length: THUD_POOL_SIZE }, () => {
@@ -265,23 +389,27 @@ function playLeavesSound(time) {
     a.play().catch(e => console.warn("Leaves sound failed:", e));
 }
 
-// Dynamic race audio state (starts at 100% volume, decreased by 17% per finished racer)
-let raceAudioTargetVolume = 1.0;
-let isFadingInRaceAudio = false;
-let raceAudioFadeTimer = 0;
+// Initialize audio and simulation settings across pools and engines
+applyAudioSettings();
+applySimulationSettings();
+raceAudioTargetVolume = currentEngineVolumeFactor;
 
 function startRaceAudio() {
     if (fadeInterval) clearInterval(fadeInterval);
+    applyAudioSettings();
     sfxRace.currentTime = 0;
-    sfxRace.volume = 1.0;
+    sfxRace.volume = currentEngineVolumeFactor;
     sfxRace.loop = true;
-    raceAudioTargetVolume = 1.0;
+    raceAudioTargetVolume = currentEngineVolumeFactor;
     isFadingInRaceAudio = false;
-    sfxRace.play().catch(e => console.warn("Race audio play failed:", e));
+    if (currentEngineVolumeFactor > 0) {
+        sfxRace.play().catch(e => console.warn("Race audio play failed:", e));
+    }
 }
 
 function decreaseRaceAudioVolume(percentage = 0.17) {
-    raceAudioTargetVolume = Math.max(0, raceAudioTargetVolume - percentage);
+    const step = currentEngineVolumeFactor * percentage;
+    raceAudioTargetVolume = Math.max(0, raceAudioTargetVolume - step);
 }
 
 // --- GENERATED HALLOWEEN AUDIO ENGINE (Spooky Countdown & Ambience) ---
@@ -1155,20 +1283,38 @@ const hazardsGroup = new THREE.Group();
 landscapeGroup.add(hazardsGroup);
 
 let activeHazards = [];
+window.activeHazards = activeHazards;
+isSceneInitialized = true;
 
 function generateTrackHazards() {
+    if (!isSceneInitialized || !hazardsGroup) return;
     hazardsGroup.clear();
     activeHazards = [];
+    window.activeHazards = activeHazards;
 
-    if (!MonsterModelManager.slimeTemplate && !MonsterModelManager.leafTemplate) return;
+    if (!MonsterModelManager || (!MonsterModelManager.slimeTemplate && !MonsterModelManager.leafTemplate)) return;
+
+    const session = (typeof loadSessionData === 'function') ? loadSessionData() : null;
+    const density = session?.settings?.hazardDensity || (typeof loadPersistentOtherSettings === 'function' ? loadPersistentOtherSettings().hazardDensity : 'normal');
+
+    if (density === 'disabled') {
+        return; // No hazards generated when disabled
+    }
 
     const minZ = 0.10 * CONFIG.raceDistance; // 420m (not within first 10%)
     const maxZ = 0.90 * CONFIG.raceDistance; // 3780m (not within last 10%)
     const minSeparation = 0.05 * CONFIG.raceDistance; // 210m (not within 5% of each other)
 
-    // Count of leaves increased by a multiple of 3 (from 2-6 to 6-18 occurrences per race)
-    const slimeCount = 2 + Math.floor(Math.random() * 5);
-    const leafCount = (2 + Math.floor(Math.random() * 5)) * 3;
+    let slimeCount = 2 + Math.floor(Math.random() * 5);
+    let leafCount = (2 + Math.floor(Math.random() * 5)) * 3;
+
+    if (density === 'low') {
+        slimeCount = 1 + Math.floor(Math.random() * 2);
+        leafCount = 2 + Math.floor(Math.random() * 3);
+    } else if (density === 'high') {
+        slimeCount = 5 + Math.floor(Math.random() * 5);
+        leafCount = (4 + Math.floor(Math.random() * 5)) * 4;
+    }
 
     const placedHazards = [];
 
@@ -2174,7 +2320,7 @@ const MONSTER_MANIFEST = [
     { id: 7, name: 'skeleton',  file: 'models/skeleton.glb',  scale: CONFIG.racerScale, rotY: 0 }
 ];
 
-const MonsterModelManager = {
+var MonsterModelManager = {
     _cache: new Array(8).fill(null),
     _failed: new Array(8).fill(false),
     treeTemplates: [],
@@ -3425,10 +3571,13 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     raceAudio.init();
 
     // Engine rev repeats while camera is panning racers at the start
+    applyAudioSettings();
     sfxEngine.currentTime = 0;
     sfxEngine.loop = true;
-    sfxEngine.volume = 0.95;
-    sfxEngine.play().catch(e => console.warn("Engine sound failed:", e));
+    sfxEngine.volume = 0.95 * currentEngineVolumeFactor;
+    if (currentEngineVolumeFactor > 0) {
+        sfxEngine.play().catch(e => console.warn("Engine sound failed:", e));
+    }
 });
 
 function runCountdownSequence() {

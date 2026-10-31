@@ -53,6 +53,7 @@
         <button class="nav-tab active" data-tab="live">LIVE TOTE</button>
         <button class="nav-tab" data-tab="races">MANAGE RACES</button>
         <button class="nav-tab" data-tab="settings">TOTE SETTINGS</button>
+        <button class="nav-tab" data-tab="other">OTHER SETTINGS</button>
     </nav>
 
     <main class="admin-content">
@@ -242,6 +243,125 @@
                         <span id="settings-save-msg" class="save-indicator">Settings auto-saved to active session.</span>
                     </div>
                 </form>
+            </div>
+        </section>
+
+        <!-- TAB 4: OTHER SETTINGS -->
+        <section id="tab-other" class="tab-pane">
+            <!-- AUDIO SETTINGS GROUP -->
+            <div class="card settings-card">
+                <div class="card-header">
+                    <h2>AUDIO SETTINGS</h2>
+                </div>
+                <form id="other-audio-form" class="settings-form">
+                    <div class="settings-group">
+                        <label for="setting-master-mute">
+                            <strong>Master Mute (PA / Announcement Mode):</strong>
+                            <span class="help-text">Instantly silence all projector audio during club announcements or speeches without losing your volume mix.</span>
+                        </label>
+                        <div class="toggle-control-wrap">
+                            <label class="switch">
+                                <input type="checkbox" id="setting-master-mute">
+                                <span class="slider round"></span>
+                            </label>
+                            <span id="mute-status-label" class="toggle-status-text">Unmuted (Normal Sound)</span>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="setting-engine-volume">
+                            <strong>Engine volume:</strong>
+                            <span class="help-text">Adjust the volume of the background race engine.</span>
+                        </label>
+                        <select id="setting-engine-volume">
+                            <option value="100">100% [Default]</option>
+                            <option value="75">75%</option>
+                            <option value="50">50%</option>
+                            <option value="25">25%</option>
+                            <option value="0">0%</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="setting-impact-volume">
+                            <strong>Impact volume:</strong>
+                            <span class="help-text">Adjust the volume of collisions, slime and leaves</span>
+                        </label>
+                        <select id="setting-impact-volume">
+                            <option value="100">100% [Default]</option>
+                            <option value="75">75%</option>
+                            <option value="50">50%</option>
+                            <option value="25">25%</option>
+                            <option value="0">0%</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="setting-announcer-volume">
+                            <strong>Announcer &amp; Fanfare volume:</strong>
+                            <span class="help-text">Adjust the volume of countdown beeps ("start.ogg") and winner fanfare ("winner.ogg").</span>
+                        </label>
+                        <select id="setting-announcer-volume">
+                            <option value="100">100% [Default]</option>
+                            <option value="75">75%</option>
+                            <option value="50">50%</option>
+                            <option value="25">25%</option>
+                            <option value="0">0%</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+
+            <!-- RACE & SIMULATION SETTINGS GROUP -->
+            <div class="card settings-card" style="margin-top: 24px;">
+                <div class="card-header">
+                    <h2>RACE &amp; SIMULATION</h2>
+                </div>
+                <form id="other-simulation-form" class="settings-form">
+                    <div class="settings-group">
+                        <label for="setting-hazard-density">
+                            <strong>Hazard Density:</strong>
+                            <span class="help-text">Controls the frequency of track hazard obstacles (slime pools and leaf piles) encountered by racers.</span>
+                        </label>
+                        <select id="setting-hazard-density">
+                            <option value="high">High</option>
+                            <option value="normal" selected>Normal</option>
+                            <option value="low">Low</option>
+                            <option value="disabled">Disabled</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="setting-simulation-speed">
+                            <strong>Race Pace / Simulation Speed:</strong>
+                            <span class="help-text">Adjust the simulation speed of races to align with your venue schedule.</span>
+                        </label>
+                        <select id="setting-simulation-speed">
+                            <option value="1.0" selected>Normal (1.0x) [Default]</option>
+                            <option value="1.25">Fast (1.25x)</option>
+                            <option value="1.5">Turbo (1.5x)</option>
+                            <option value="0.85">Relaxed (0.85x)</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+
+            <!-- PROJECTOR REMOTE CONTROL GROUP -->
+            <div class="card settings-card" style="margin-top: 24px;">
+                <div class="card-header">
+                    <h2>PROJECTOR REMOTE</h2>
+                </div>
+                <div class="settings-group" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <strong>Projector Fullscreen Remote:</strong>
+                        <span class="help-text">Command the projector screen to toggle in or out of browser fullscreen mode.</span>
+                    </div>
+                    <button type="button" id="btn-remote-fullscreen" class="btn btn-secondary">TOGGLE FULLSCREEN</button>
+                </div>
+
+                <div class="settings-status-bar">
+                    <span id="other-settings-save-msg" class="save-indicator">Settings auto-saved to active session.</span>
+                </div>
             </div>
         </section>
     </main>

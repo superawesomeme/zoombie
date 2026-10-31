@@ -134,8 +134,75 @@ const DEFAULT_TOTE_SETTINGS = {
     ticketPrice: 1.00,
     prizeSplitPct: 50,
     roundingStep: 0.50,
-    startingFloat: 0.00
+    startingFloat: 0.00,
+    engineVolume: 100,
+    impactVolume: 100,
+    announcerVolume: 100,
+    masterMute: false,
+    hazardDensity: 'normal',
+    simulationSpeed: 1.0
 };
+
+/**
+ * Helper to load persistent other settings (audio, hazard density, pace) across sessions
+ */
+function loadPersistentOtherSettings() {
+    try {
+        const raw = localStorage.getItem('zoombie_other_settings') || localStorage.getItem('zoombie_audio_settings');
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            return {
+                engineVolume: typeof parsed.engineVolume === 'number' ? parsed.engineVolume : 100,
+                impactVolume: typeof parsed.impactVolume === 'number' ? parsed.impactVolume : 100,
+                announcerVolume: typeof parsed.announcerVolume === 'number' ? parsed.announcerVolume : 100,
+                masterMute: Boolean(parsed.masterMute),
+                hazardDensity: ['high', 'normal', 'low', 'disabled'].includes(parsed.hazardDensity) ? parsed.hazardDensity : 'normal',
+                simulationSpeed: typeof parsed.simulationSpeed === 'number' ? parsed.simulationSpeed : 1.0
+            };
+        }
+    } catch (e) {}
+    return {
+        engineVolume: 100,
+        impactVolume: 100,
+        announcerVolume: 100,
+        masterMute: false,
+        hazardDensity: 'normal',
+        simulationSpeed: 1.0
+    };
+}
+
+const loadPersistentAudioSettings = loadPersistentOtherSettings;
+
+/**
+ * Helper to save persistent other settings
+ */
+function savePersistentOtherSettings(settings) {
+    try {
+        const payload = {
+            engineVolume: typeof settings?.engineVolume === 'number' ? settings.engineVolume : 100,
+            impactVolume: typeof settings?.impactVolume === 'number' ? settings.impactVolume : 100,
+            announcerVolume: typeof settings?.announcerVolume === 'number' ? settings.announcerVolume : 100,
+            masterMute: Boolean(settings?.masterMute),
+            hazardDensity: ['high', 'normal', 'low', 'disabled'].includes(settings?.hazardDensity) ? settings.hazardDensity : 'normal',
+            simulationSpeed: typeof settings?.simulationSpeed === 'number' ? settings.simulationSpeed : 1.0
+        };
+        localStorage.setItem('zoombie_other_settings', JSON.stringify(payload));
+        // Keep zoombie_audio_settings synchronized for compatibility
+        localStorage.setItem('zoombie_audio_settings', JSON.stringify({
+            engineVolume: payload.engineVolume,
+            impactVolume: payload.impactVolume,
+            announcerVolume: payload.announcerVolume,
+            masterMute: payload.masterMute
+        }));
+    } catch (e) {}
+}
+
+function savePersistentAudioSettings(engineVolume, impactVolume) {
+    const existing = loadPersistentOtherSettings();
+    existing.engineVolume = typeof engineVolume === 'number' ? engineVolume : existing.engineVolume;
+    existing.impactVolume = typeof impactVolume === 'number' ? impactVolume : existing.impactVolume;
+    savePersistentOtherSettings(existing);
+}
 
 /**
  * Generate a 6-digit session ID formatted as xxx-xxx (e.g. "482-919")
@@ -223,8 +290,29 @@ function loadSessionData() {
                 }
                 if (!parsed.settings) {
                     parsed.settings = { ...DEFAULT_TOTE_SETTINGS };
-                } else if (typeof parsed.settings.startingFloat !== 'number') {
-                    parsed.settings.startingFloat = 0.00;
+                } else {
+                    if (typeof parsed.settings.startingFloat !== 'number') {
+                        parsed.settings.startingFloat = 0.00;
+                    }
+                    const persistentOther = loadPersistentOtherSettings();
+                    if (typeof parsed.settings.engineVolume !== 'number') {
+                        parsed.settings.engineVolume = persistentOther.engineVolume;
+                    }
+                    if (typeof parsed.settings.impactVolume !== 'number') {
+                        parsed.settings.impactVolume = persistentOther.impactVolume;
+                    }
+                    if (typeof parsed.settings.announcerVolume !== 'number') {
+                        parsed.settings.announcerVolume = persistentOther.announcerVolume;
+                    }
+                    if (typeof parsed.settings.masterMute !== 'boolean') {
+                        parsed.settings.masterMute = persistentOther.masterMute;
+                    }
+                    if (!['high', 'normal', 'low', 'disabled'].includes(parsed.settings.hazardDensity)) {
+                        parsed.settings.hazardDensity = persistentOther.hazardDensity;
+                    }
+                    if (typeof parsed.settings.simulationSpeed !== 'number') {
+                        parsed.settings.simulationSpeed = persistentOther.simulationSpeed;
+                    }
                 }
                 return parsed;
             }
@@ -234,11 +322,20 @@ function loadSessionData() {
     }
 
     // Default initial session
+    const persistentOther = loadPersistentOtherSettings();
     const freshSession = {
         sessionId: generateSessionId(),
         currentRaceIndex: 0,
         toteState: "BETTING",
-        settings: { ...DEFAULT_TOTE_SETTINGS },
+        settings: {
+            ...DEFAULT_TOTE_SETTINGS,
+            engineVolume: persistentOther.engineVolume,
+            impactVolume: persistentOther.impactVolume,
+            announcerVolume: persistentOther.announcerVolume,
+            masterMute: persistentOther.masterMute,
+            hazardDensity: persistentOther.hazardDensity,
+            simulationSpeed: persistentOther.simulationSpeed
+        },
         currentBets: [0, 0, 0, 0, 0, 0, 0, 0],
         currentStartTickets: [1, 1, 1, 1, 1, 1, 1, 1],
         currentNextTickets: [1, 1, 1, 1, 1, 1, 1, 1],
@@ -267,7 +364,26 @@ function saveSessionData(session) {
  */
 function resetSessionData() {
     const existing = loadSessionData();
+    const persistentOther = loadPersistentOtherSettings();
     const preservedSettings = existing?.settings ? { ...existing.settings } : { ...DEFAULT_TOTE_SETTINGS };
+    if (typeof preservedSettings.engineVolume !== 'number') {
+        preservedSettings.engineVolume = persistentOther.engineVolume;
+    }
+    if (typeof preservedSettings.impactVolume !== 'number') {
+        preservedSettings.impactVolume = persistentOther.impactVolume;
+    }
+    if (typeof preservedSettings.announcerVolume !== 'number') {
+        preservedSettings.announcerVolume = persistentOther.announcerVolume;
+    }
+    if (typeof preservedSettings.masterMute !== 'boolean') {
+        preservedSettings.masterMute = persistentOther.masterMute;
+    }
+    if (!['high', 'normal', 'low', 'disabled'].includes(preservedSettings.hazardDensity)) {
+        preservedSettings.hazardDensity = persistentOther.hazardDensity;
+    }
+    if (typeof preservedSettings.simulationSpeed !== 'number') {
+        preservedSettings.simulationSpeed = persistentOther.simulationSpeed;
+    }
     const freshSession = {
         sessionId: generateSessionId(),
         currentRaceIndex: 0,

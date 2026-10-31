@@ -2276,7 +2276,7 @@ function spawnFootstepMist(x, z, scale, maxAge = 0.65) {
     item.baseScale = scale;
     item.mesh.position.set(x, 0.14, z);
     item.mesh.scale.set(scale, scale, 1);
-    item.mesh.material.opacity = 0.68;
+    item.mesh.material.opacity = 0.34;
     item.mesh.visible = true;
 }
 
@@ -2292,7 +2292,7 @@ function updateFootstepMist(delta) {
             const progress = item.age / item.maxAge;
             const s = item.baseScale + progress * 5.2;
             item.mesh.scale.set(s, s, 1);
-            item.mesh.material.opacity = 0.68 * (1 - progress);
+            item.mesh.material.opacity = 0.34 * (1 - progress);
         }
     }
 }
@@ -3153,15 +3153,15 @@ class Zoombie {
         if (this.stepTimer >= 1.8) {
             const cosH = Math.cos(pt.heading), sinH = Math.sin(pt.heading);
             const scale = 2.6 + Math.random() * 0.9;
-            const w1X = this.position.x + (-5.2 * cosH - (-12.2) * sinH);
-            const w1Z = worldZ + (-5.2 * sinH + (-12.2) * cosH);
-            const w2X = this.position.x + (5.2 * cosH - (-12.2) * sinH);
-            const w2Z = worldZ + (5.2 * sinH + (-12.2) * cosH);
+            const w1X = this.position.x + (-2.925 * cosH - (-12.2) * sinH);
+            const w1Z = worldZ + (-2.925 * sinH + (-12.2) * cosH);
+            const w2X = this.position.x + (2.925 * cosH - (-12.2) * sinH);
+            const w2Z = worldZ + (2.925 * sinH + (-12.2) * cosH);
             spawnFootstepMist(w1X, w1Z, scale);
             spawnFootstepMist(w2X, w2Z, scale);
             if (Math.random() < 0.45) {
-                const midX = this.position.x + ((Math.random() - 0.5) * 3.2 * cosH - (-13.0) * sinH);
-                const midZ = worldZ + ((Math.random() - 0.5) * 3.2 * sinH + (-13.0) * cosH);
+                const midX = this.position.x + ((Math.random() - 0.5) * 1.8 * cosH - (-13.0) * sinH);
+                const midZ = worldZ + ((Math.random() - 0.5) * 1.8 * sinH + (-13.0) * cosH);
                 spawnFootstepMist(midX, midZ, scale * 1.3);
             }
             this.stepTimer = 0;
